@@ -22,7 +22,7 @@
   "author": "Aidan Feess",
   "type": "module",
   "bin": {
-    "specdeck": "./dist/cli/index.js"
+    "specdeck": "dist/cli/index.js"
   },
   "files": [
     "dist",

@@ -40,8 +40,19 @@ describe('package manifest', () => {
     expect(binTarget).toBeDefined();
     // The bin path must land under a directory listed in "files", otherwise the
     // published tarball resolves to nothing.
-    expect(binTarget?.startsWith('./dist/')).toBe(true);
+    expect(binTarget?.startsWith('dist/')).toBe(true);
     expect(manifest.files).toContain('dist');
+  });
+
+  it('declares its bin without a leading "./"', () => {
+    // npm rejects a bin path prefixed with "./" at publish time and strips the
+    // entry entirely, with only a warning. The tarball keeps it and a local
+    // install of that tarball works, so this is invisible everywhere except a
+    // real registry publish, where it means the published package has no CLI
+    // and "npx specdeck" silently does nothing.
+    const binTarget = manifest.bin.specdeck ?? '';
+    expect(binTarget.startsWith('./')).toBe(false);
+    expect(binTarget.startsWith('/')).toBe(false);
   });
 
   it('is an ES module, matching the OpenSpec package it consumes', () => {
