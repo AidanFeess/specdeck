@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -41,7 +41,10 @@ function write(dir: string, relative: string, content: string): void {
 }
 
 function buildProject(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'specdeck-burst-'));
+  // The temp directory is resolved to its canonical form for the same reason
+  // the watcher does it: on Windows a case or short-name mismatch makes libuv
+  // abort the process rather than throw.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'specdeck-burst-')));
   roots.push(dir);
 
   execFileSync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: dir });

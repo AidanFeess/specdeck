@@ -1,4 +1,5 @@
 import chokidar, { type FSWatcher } from 'chokidar';
+import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -38,7 +39,29 @@ export interface WatchOptions {
  * The git paths are watched because committing, switching branches, and fetching
  * change what the board should show but touch nothing inside `openspec/`.
  */
-export function watchProject(projectRoot: string, options: WatchOptions): WatchHandle {
+/**
+ * Resolves a path to its canonical on-disk form.
+ *
+ * This is not tidiness. On Windows, libuv asserts inside its filesystem event
+ * code when the path it is watching does not case-match the names the operating
+ * system reports, and an assertion is not an exception: it aborts the process.
+ * Short-name and casing variants of a directory are common, particularly under
+ * the temp directory, so a user whose project path happens to differ in case
+ * would take the whole server down rather than see an error.
+ *
+ * Falls back to the original path when the target does not exist yet, which the
+ * watcher tolerates on its own.
+ */
+function canonical(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
+export function watchProject(rawProjectRoot: string, options: WatchOptions): WatchHandle {
+  const projectRoot = canonical(rawProjectRoot);
   const quiet = options.quietPeriodMs ?? QUIET_PERIOD_MS;
   const reconcileEvery = options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS;
 
