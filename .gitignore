@@ -8,10 +8,22 @@ dist/
 # Test output
 coverage/
 
-# Environment
+# Environment and credentials
 .env
 .env.*
 !.env.example
+
+# Anything holding a token or key. Broad on purpose: the cost of ignoring a
+# file that did not need it is nothing, and the cost of missing one is a leaked
+# credential in public history.
+.secret
+.secret*
+*.secret
+secrets.json
+.npmrc
+*.pem
+*.key
+!tsconfig*.json
 
 # Logs
 *.log
