@@ -1,6 +1,6 @@
 {
   "name": "specdeck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local dashboard for OpenSpec projects. See what specs you have and where each one is, without spending a single token.",
   "keywords": [
     "openspec",

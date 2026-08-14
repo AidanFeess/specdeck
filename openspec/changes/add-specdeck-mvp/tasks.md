@@ -106,7 +106,7 @@
 
 - [x] 11.1 Build the handoff payload naming the change and the OpenSpec commands, with no embedded spec content
 - [x] 11.2 Implement harness detection from OpenSpec generated skill and command files, rejecting bare directory presence as a signal
-- [ ] 11.3 Report harnesses that store commands outside the project as undetectable rather than absent
+- [x] 11.3 Report harnesses that store commands outside the project as undetectable rather than absent
 - [x] 11.4 Detect a harness that is present but not wired to OpenSpec, and offer to configure it
 - [x] 11.5 Implement the copy method, including the rendered payload view, and treat it as the primary path
 - [x] 11.6 Implement the terminal method for harnesses with a usable non interactive entry point
@@ -133,4 +133,4 @@
 - [x] 13.1 Verify the packaged artifact runs from a clean install on Windows, macOS, and Linux
 - [x] 13.2 Verify the interface against this repository's own OpenSpec state as the dogfooding fixture
 - [x] 13.3 Complete the README with screenshots, supported harnesses, and known limitations
-- [ ] 13.4 Publish the first tagged release
+- [x] 13.4 Publish the first tagged release
