@@ -1,0 +1,17 @@
+# Normalize line endings to LF in the repository for every text file.
+#
+# This is not cosmetic. specdeck compares working tree content against committed
+# content to decide whether a spec is uncommitted, and AI agents write markdown
+# with LF endings. Without this, a contributor on Windows with core.autocrlf
+# enabled can produce diffs that are pure line ending noise, which is exactly the
+# false signal the sync model is built to avoid.
+* text=auto eol=lf
+
+# Binary files must never be normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

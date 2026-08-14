@@ -1,0 +1,64 @@
+{
+  "name": "specdeck",
+  "version": "0.1.0",
+  "description": "A local dashboard for OpenSpec projects. See what specs you have and where each one is, without spending a single token.",
+  "keywords": [
+    "openspec",
+    "spec-driven-development",
+    "sdd",
+    "dashboard",
+    "kanban",
+    "specs"
+  ],
+  "homepage": "https://github.com/AidanFeess/specdeck#readme",
+  "bugs": {
+    "url": "https://github.com/AidanFeess/specdeck/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AidanFeess/specdeck.git"
+  },
+  "license": "MIT",
+  "author": "Aidan Feess",
+  "type": "module",
+  "bin": {
+    "specdeck": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "check:harness": "npm run build && node scripts/check-harness-drift.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^24.2.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "eslint": "^9.39.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.1",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "1.4.1",
+    "chokidar": "^4.0.3",
+    "open": "^10.2.0",
+    "yaml": "^2.9.0"
+  }
+}

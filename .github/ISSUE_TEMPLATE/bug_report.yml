@@ -1,0 +1,85 @@
+name: Bug report
+description: Something in specdeck behaves incorrectly
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Repository shape causes a large share of issues in a tool like this.
+        The environment questions below are not boilerplate, they are usually the answer.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run npx specdeck in ...
+        2. Open the ... view
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: specdeck-version
+    attributes:
+      label: specdeck version
+    validations:
+      required: true
+
+  - type: input
+    id: openspec-version
+    attributes:
+      label: OpenSpec version
+      description: Output of `openspec --version`, or "not installed globally"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - WSL
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: repo-shape
+    attributes:
+      label: Repository shape
+      description: Tick anything that applies. These change how sync and timeline behave.
+      options:
+        - label: The project is not in a git repository
+        - label: The repository has no commits yet
+        - label: The repository has no remote configured
+        - label: This is a linked git worktree
+        - label: The OpenSpec directory is inside a submodule
+        - label: The OpenSpec directory is not at the repository root
+        - label: This is a shallow clone
+        - label: The files are on a network drive or a mounted filesystem
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: Any error shown in the interface or printed to the terminal.
+      render: text

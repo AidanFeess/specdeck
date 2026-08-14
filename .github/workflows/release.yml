@@ -1,0 +1,86 @@
+name: Release
+
+# Releases are cut by pushing a tag:
+#
+#   npm version minor        # updates package.json and creates the tag
+#   git push --follow-tags
+#
+# This workflow verifies the tag, publishes to npm with provenance, and creates
+# the matching GitHub release.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify before publishing
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run build
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      # Required for npm provenance, which lets consumers verify the published
+      # package was built from this repository at this commit.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      - name: Check the tag matches the manifest version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$manifest" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $manifest." >&2
+            echo "Publishing would produce a release whose tag lies about its contents." >&2
+            exit 1
+          fi
+          echo "Tag and manifest agree on $manifest."
+
+      - run: npm run build
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

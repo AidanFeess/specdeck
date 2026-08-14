@@ -1,0 +1,46 @@
+name: AI tool support
+description: Request or report a problem with support for a specific AI coding tool
+labels: ['harness']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        specdeck detects which AI tools a project is configured for by looking at the
+        files `openspec init` generated, then hands work off using the best method it
+        can for that tool. Copying the prompt always works, so this is about the paths
+        above that.
+
+  - type: input
+    id: tool
+    attributes:
+      label: Which tool
+      description: For example Claude Code, Cursor, Codex, opencode, Windsurf.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is this about
+      options:
+        - specdeck does not detect this tool in my project
+        - specdeck detects it but hands off with a weaker method than it could
+        - specdeck attempts a handoff and it fails
+        - Adding support for a tool specdeck does not know about
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: What OpenSpec generated for this tool
+      description: |
+        The output of listing the tool's configuration directory in your project, for
+        example `.claude/`, `.cursor/`, or wherever this tool keeps its commands.
+      render: text
+
+  - type: textarea
+    id: invocation
+    attributes:
+      label: How you would normally start this tool without the interface
+      description: The command you would run, or the steps you would take by hand.

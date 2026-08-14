@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest something specdeck should do
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you hitting
+      description: Describe the situation, not the solution. What are you unable to see or do today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: The current workaround, if there is one.
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Compatibility with specdeck's principles
+      description: |
+        These are load bearing. A request that conflicts with one is not automatically
+        rejected, but it needs a different design. See the design document for why.
+      options:
+        - label: This does not require storing state that should be derived from files
+        - label: This does not require writing specdeck's own files into a user's repository
+        - label: This does not require calling a language model to work

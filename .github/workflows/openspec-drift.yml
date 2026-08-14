@@ -1,0 +1,43 @@
+name: OpenSpec drift
+
+# specdeck detects which AI tools a project is configured for by looking for the
+# files `openspec init` generates, and hands off using the slash commands it
+# generates. OpenSpec does not export either of those, so specdeck carries its
+# own table of per-tool paths and command shapes.
+#
+# That table will drift silently. The symptom is not an error: it is a harness
+# quietly reported as unconfigured, or a handoff that falls back to copying when
+# a real command exists. This job initializes every supported tool in a throwaway
+# directory and fails when what OpenSpec produces stops matching what specdeck
+# expects.
+
+on:
+  schedule:
+    # Weekly. OpenSpec releases often, and a stale table is a slow leak rather
+    # than an outage, so daily noise would not buy anything.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/core/openspec/harness.ts'
+      - 'src/core/openspec/init.ts'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Detect OpenSpec generation drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Initialize every supported tool and compare
+        run: node scripts/check-harness-drift.mjs
