@@ -57,6 +57,12 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      # Trusted publishing needs a recent npm. The version bundled with Node is
+      # not guaranteed to be new enough, and the failure mode is an
+      # authentication error rather than anything that names the real cause.
+      - name: Use an npm that supports trusted publishing
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       - name: Check the tag matches the manifest version
@@ -73,10 +79,14 @@ jobs:
 
       - run: npm run build
 
+      # No token. Authentication is OIDC via trusted publishing, configured on
+      # the package at npmjs.com against this repository and this workflow file.
+      #
+      # This deliberately replaces a granular token with bypass-2FA enabled,
+      # which npm is in the process of restricting. Provenance is still signed,
+      # because the publish still runs from GitHub Actions with id-token: write.
       - name: Publish
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
