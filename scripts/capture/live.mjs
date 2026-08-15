@@ -55,7 +55,7 @@ try {
   await page.goto(base);
   await page.waitFor("document.querySelectorAll('#board .card').length > 0");
   await page.setTheme('dark');
-  await page.evaluate("switchView('board'); true");
+  await page.evaluate("specdeck.switchView('board'); true");
   await page.waitFor("document.querySelectorAll('#board .card').length > 0");
 
   // Frame on the lanes the card travels through, rather than on the whole

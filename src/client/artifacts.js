@@ -37,6 +37,21 @@ export function hasUnsavedEdit(changeName) {
 }
 
 /**
+ * Forgets every open edit, discarding whatever was in them.
+ *
+ * Only for the screenshot harness, which takes each shot twice and needs the
+ * second pass to start from the same place as the first. Nothing in the
+ * interface calls this: discarding a user's text without asking is exactly what
+ * the rest of this module exists to prevent.
+ */
+export function resetEditing() {
+  for (const name of Object.keys(editing)) delete editing[name];
+  for (const name of Object.keys(drafts)) delete drafts[name];
+  for (const name of Object.keys(conflicts)) delete conflicts[name];
+  closeArtifactEditor();
+}
+
+/**
  * Renders the Files tab into `body`.
  *
  * `deps` supplies el, esc, toast, renderMarkdown, createEditor, and reopen,

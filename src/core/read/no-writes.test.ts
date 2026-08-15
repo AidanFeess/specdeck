@@ -52,11 +52,21 @@ interface Snapshot {
   [relativePath: string]: string;
 }
 
-/** Records every file's path, size, and modification time. */
+/**
+ * Records every file's path, size, and modification time.
+ *
+ * `.git` is deliberately not walked. The promise being asserted is about the
+ * working tree: the files a user wrote and can see. Git maintains its own index
+ * and caches as a side effect of being asked read-only questions, and `git
+ * status` refreshing `.git/index` is git's bookkeeping rather than specdeck
+ * writing into somebody's project. Counting it made this test fail on whichever
+ * runner happened to be slow enough to catch a lock file mid-write.
+ */
 function snapshotTree(root: string): Snapshot {
   const seen: Snapshot = {};
   (function walk(dir: string): void {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.git') continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);

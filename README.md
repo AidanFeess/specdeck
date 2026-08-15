@@ -89,16 +89,33 @@ since the board read it, the write is refused rather than clobbering its work.
 
 ### Read every artifact, and edit it in place
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/change-files-dark.png">
+  <img alt="The detail panel showing a change's files, with the proposal rendered as a document beside the list of artifacts" src="docs/media/change-files-light.png">
+</picture>
+
 Whatever artifacts your workflow schema declares, whether that is proposal, design, specs,
 and tasks or something your own schema invented, rendered as markdown with the exact source
 one click away. Accumulated capability specs read the same way.
 
-Editing opens a real editor over the page, and saves straight back to the file. If an agent
-rewrote it while you were typing, the save is refused rather than merged, your text is kept,
-and moving past the conflict is a button you press knowingly. `openspec validate` runs on
-save and reports against the change.
+Editing takes the page rather than a column, so the file you are changing is readable while
+you change it, and saves straight back to disk.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/editor-dark.png">
+  <img alt="The markdown editor open across the page, with the rendered change still visible in the panel on the right" src="docs/media/editor-light.png">
+</picture>
+
+If an agent rewrote the file while you were typing, the save is refused rather than merged,
+your text is kept, and moving past the conflict is a button you press knowingly.
+`openspec validate` runs on save and reports against the change.
 
 ### Approve a change, and have it mean something
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/approval-dark.png">
+  <img alt="A board with one change marked approved and another marked needs review, and the panel showing who approved it and the commit that records it" src="docs/media/approval-light.png">
+</picture>
 
 Approving records a commit carrying an `Approved-by:` trailer. The state is then read back
 out of git, so it survives a clone and appears for a teammate the moment they pull. Edit any
@@ -109,6 +126,11 @@ Approving commits only that change's directory, and leaves anything you had stag
 as you left it.
 
 ### A list, when the board is the wrong shape
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/list-dark.png">
+  <img alt="A sortable table of changes drawn from three different projects, with lane, task progress, approval state and dates" src="docs/media/list-light.png">
+</picture>
 
 Every change across every root you have registered, sortable by name, lane, task progress,
 approval, creation date, and last activity, and filterable by lane, root, initiative, and

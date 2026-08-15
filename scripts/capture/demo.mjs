@@ -14,7 +14,7 @@
  * a one-time arrangement nobody can recreate after the interface changes.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(process.argv[2] ?? 'demo');
@@ -531,6 +531,56 @@ rmSync(root, { recursive: true, force: true });
 mkdirSync(root, { recursive: true });
 
 const orbit = buildOrbit(join(root, 'orbit'));
+
+/**
+ * Approves a change the way specdeck does, so the board has an approval to show.
+ *
+ * Written here rather than driven through the interface because the screenshots
+ * are taken against a fixed state, and an approval made at capture time would
+ * carry that day's date into the image.
+ */
+function approve(cwd, changeName, who, when) {
+  execFileSync(
+    'git',
+    [
+      'commit',
+      '--allow-empty',
+      '-m',
+      `Approve ${changeName}`,
+      '-m',
+      `Approved-change: ${changeName}\nApproved-by: ${who.name} <${who.email}>`,
+      '--',
+      `openspec/changes/${changeName}`,
+    ],
+    {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: who.name,
+        GIT_AUTHOR_EMAIL: who.email,
+        GIT_COMMITTER_NAME: who.name,
+        GIT_COMMITTER_EMAIL: who.email,
+        GIT_AUTHOR_DATE: when,
+        GIT_COMMITTER_DATE: when,
+      },
+    },
+  );
+}
+
+const reviewer = { name: 'Sam Reyes', email: 'sam@example.com' };
+
+// One change signed off and still matching, and one signed off before a later
+// edit, because "approved" and "needs review again" are the two states worth
+// seeing side by side.
+approve(orbit, 'add-endpoint-rotation', reviewer, '2026-08-12T11:20:00-04:00');
+approve(orbit, 'redesign-digest-schedule', reviewer, '2026-08-12T14:05:00-04:00');
+write(
+  join(orbit, 'openspec/changes/redesign-digest-schedule/proposal.md'),
+  readFileSync(join(orbit, 'openspec/changes/redesign-digest-schedule/proposal.md'), 'utf8') +
+    '\nA later thought, added after Sam signed this off.\n',
+);
+commit(orbit, 'Revisit the digest schedule after review', '2026-08-12T16:40:00-04:00');
 
 // A remote with a change nobody local has yet. This is the state that cannot be
 // staged inside one repository, and it is the one worth showing.

@@ -140,16 +140,38 @@ The images in the README are generated rather than captured by hand, so an inter
 does not quietly leave them wrong:
 
 ```bash
+npm run build
 node scripts/capture/demo.mjs ../specdeck-demo
+node scripts/capture/registry.mjs ../specdeck-demo ../specdeck-demo/.specdeck-config
+
+export SPECDECK_CONFIG_DIR=../specdeck-demo/.specdeck-config
 node dist/cli/index.js ../specdeck-demo/orbit --port 7788 --no-open
+
 node scripts/capture/shots.mjs http://127.0.0.1:7788 docs/media
 node scripts/capture/live.mjs http://127.0.0.1:7788 ../specdeck-demo/orbit docs/media/live-update.gif
+```
+
+`SPECDECK_CONFIG_DIR` is not optional. The projects view reads specdeck's own registry, so
+capturing against your real one publishes your username, the names of your projects, and
+wherever they sit on disk. Pointing it at the generated registry keeps the image the same
+for everybody and free of whoever ran it.
+
+The self-specs image is the specs view captured against this repository rather than the
+demo, which is what the last two arguments are for:
+
+```bash
+node dist/cli/index.js . --port 7789 --no-open
+node scripts/capture/shots.mjs http://127.0.0.1:7789 docs/media specs self-specs
 ```
 
 The demo projects are invented. Captures come from a headless browser rather than a
 desktop, so nothing outside the application can end up in an image. ffmpeg is used to
 compress them and to build the recording; without it the captures still work and are just
 larger.
+
+The screenshots drive the interface through `window.specdeck`, which the client exposes for
+this. The client is bundled, so its internals are inside a closure; naming what automation
+may touch means renaming an internal variable cannot silently break the images.
 
 ## Pull requests
 

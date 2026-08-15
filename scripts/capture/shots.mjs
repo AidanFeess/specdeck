@@ -71,8 +71,14 @@ const rename = process.argv[5];
 
 const BOARD_READY = "document.querySelectorAll('#board .card').length > 0";
 
-/** Closes anything left open by the previous shot. */
-const CLEAR = "selected = null; document.getElementById('panel').innerHTML = ''; true";
+/**
+ * Closes anything left open by the previous shot.
+ *
+ * Everything here drives the interface through `window.specdeck`, the surface
+ * the client exposes for exactly this. The client is bundled, so its internals
+ * are inside a closure and are no longer reachable as globals.
+ */
+const CLEAR = 'specdeck.clear(); true';
 
 const shots = [
   {
@@ -83,7 +89,7 @@ const shots = [
     height: 520,
     async prepare(page) {
       await page.evaluate(CLEAR);
-      await page.evaluate("switchView('board'); true");
+      await page.evaluate("specdeck.switchView('board'); true");
       await page.waitFor(BOARD_READY);
     },
   },
@@ -93,37 +99,98 @@ const shots = [
     height: 660,
     async prepare(page) {
       await page.evaluate(CLEAR);
-      await page.evaluate("switchView('board'); true");
+      await page.evaluate("specdeck.switchView('board'); true");
       await page.waitFor(BOARD_READY);
-      await page.evaluate(`(function(){
-        var target = state.project.snapshot.changes.filter(function(c){
-          return c.name === 'add-webhook-retries';
-        })[0];
-        activeTab[target.name] = 'tasks';
-        openPanel(target);
-        return true;
-      })()`);
+      await page.evaluate("specdeck.openChange('add-webhook-retries', 'tasks'); true");
       await page.waitFor("document.querySelectorAll('#panel .tgroup').length > 0");
     },
   },
   {
     name: 'projects',
-    width: 1200,
+    width: 1400,
     height: 460,
     async prepare(page) {
       await page.evaluate(CLEAR);
-      await page.evaluate("switchView('home'); true");
+      await page.evaluate("specdeck.switchView('home'); true");
       await page.waitFor("document.querySelectorAll('#home .pcard').length > 1");
     },
   },
   {
     name: 'specs',
-    width: 1200,
+    width: 1400,
     height: 700,
     async prepare(page) {
       await page.evaluate(CLEAR);
-      await page.evaluate("switchView('specs'); true");
+      await page.evaluate("specdeck.switchView('specs'); true");
       await page.waitFor("document.querySelectorAll('#specs .cap').length > 0");
+    },
+  },
+  {
+    // A change signed off, and one signed off before a later edit. Those two
+    // states next to each other are the whole point of approval.
+    name: 'approval',
+    width: 1560,
+    height: 560,
+    async prepare(page) {
+      await page.evaluate(CLEAR);
+      await page.evaluate("specdeck.switchView('board'); true");
+      await page.waitFor(BOARD_READY);
+      await page.evaluate('specdeck.loadApprovals(); true');
+      await page.waitFor("document.querySelectorAll('#board .card .tok.ok').length > 0");
+      await page.evaluate("specdeck.openChange('add-endpoint-rotation', 'overview'); true");
+      await page.waitFor("document.querySelectorAll('#panel .approval').length > 0");
+      // Scrolled to the end rather than to the approval itself. The approval is
+      // the last thing on this tab, so the panel ends cleanly on it, and the
+      // rows above, which carry the absolute path of whoever ran the capture,
+      // are left off the top.
+      await page.evaluate(`(function(){
+        var body = document.querySelector('#panel .abody');
+        body.scrollTop = body.scrollHeight;
+        return true;
+      })()`);
+    },
+  },
+  {
+    // The artifact reader: a proposal read as a document rather than as a file.
+    name: 'change-files',
+    width: 1560,
+    height: 660,
+    async prepare(page) {
+      await page.evaluate(CLEAR);
+      await page.evaluate("specdeck.switchView('board'); true");
+      await page.waitFor(BOARD_READY);
+      await page.evaluate("specdeck.openChange('add-webhook-retries', 'files'); true");
+      await page.waitFor("document.querySelectorAll('#panel .fdoc h2').length > 0");
+    },
+  },
+  {
+    // The editor takes the page, with the change still readable beside it.
+    name: 'editor',
+    width: 1560,
+    height: 660,
+    async prepare(page) {
+      await page.evaluate(CLEAR);
+      await page.evaluate("specdeck.switchView('board'); true");
+      await page.waitFor(BOARD_READY);
+      await page.evaluate("specdeck.openChange('add-webhook-retries', 'files'); true");
+      await page.waitFor("document.querySelectorAll('#panel .fbar').length > 0");
+      await page.evaluate(`(function(){
+        var edit = [].slice.call(document.querySelectorAll('#panel .fbar button'))
+          .filter(function(b){ return b.textContent === 'Edit'; })[0];
+        edit.click();
+        return true;
+      })()`);
+      await page.waitFor("document.querySelectorAll('#editor .cm-line').length > 0");
+    },
+  },
+  {
+    name: 'list',
+    width: 1400,
+    height: 520,
+    async prepare(page) {
+      await page.evaluate(CLEAR);
+      await page.evaluate("specdeck.switchView('list'); true");
+      await page.waitFor("document.querySelectorAll('#list .ltable tbody tr').length > 0");
     },
   },
 ];
@@ -133,7 +200,7 @@ mkdirSync(out, { recursive: true });
 
 try {
   await page.goto(base);
-  await page.waitFor('window.state && state.project');
+  await page.waitFor('window.specdeck && specdeck.read().state && specdeck.read().state.project');
 
   for (const shot of shots) {
     if (only !== undefined && shot.name !== only) continue;

@@ -1,4 +1,9 @@
-import { renderArtifactsTab, closeArtifactEditor, hasUnsavedEdit } from './artifacts.js';
+import {
+  renderArtifactsTab,
+  closeArtifactEditor,
+  hasUnsavedEdit,
+  resetEditing,
+} from './artifacts.js';
 import {
   COLUMNS,
   applyFilters,
@@ -3469,7 +3474,7 @@ function renderProjectActions() {
   };
   bar.appendChild(make);
 
-  var upd = el('button', 'icon', 'Update instruction files');
+  var upd = el('button', 'icon', 'Update instructions');
   upd.title =
     'Runs openspec update. This also rewrites OpenSpec’s own global configuration, which it infers from this project.';
   upd.onclick = function () {
@@ -3913,6 +3918,51 @@ document.addEventListener('keydown', function (e) {
 
 applyTheme(currentTheme());
 var events = new EventSource('/api/events');
+/**
+ * The surface the screenshot harness drives the interface through.
+ *
+ * The client used to be one script in the page, so `scripts/capture/` could
+ * reach `state`, `selected`, and `openPanel` as globals. Bundling put all of
+ * that inside a closure, which is the point of bundling. Rather than leak the
+ * internals back out, the few things automation genuinely needs are named here,
+ * so renaming a variable cannot silently break the screenshots.
+ */
+export const automation = {
+  /** Read-only view of what the board is currently showing. */
+  read() {
+    return { state: state, view: view, selected: selected, approvals: approvals };
+  },
+  switchView: function (next) {
+    switchView(next);
+  },
+  /** Forces a theme, so each shot can be taken in both. */
+  applyTheme: function (name) {
+    applyTheme(name);
+  },
+  loadApprovals: function () {
+    return loadApprovals();
+  },
+  /** Opens a change's detail panel on a given tab. */
+  openChange: function (name, tab) {
+    if (!state || !state.project.ok) return false;
+    var target = state.project.snapshot.changes.filter(function (c) {
+      return c.name === name;
+    })[0];
+    if (!target) return false;
+    if (tab) activeTab[target.name] = tab;
+    selected = target.name;
+    openPanel(target);
+    return true;
+  },
+  /** Clears whatever the previous shot left open, editing included. */
+  clear: function () {
+    resetEditing();
+    selected = null;
+    document.getElementById('panel').innerHTML = '';
+    document.getElementById('editor').innerHTML = '';
+  },
+};
+
 /**
  * Starts the client.
  *

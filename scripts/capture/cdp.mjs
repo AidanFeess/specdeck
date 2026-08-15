@@ -157,7 +157,7 @@ export async function launch({ width = 1440, height = 900, scale = 2 } = {}) {
     },
 
     async setTheme(theme) {
-      await this.evaluate(`applyTheme(${JSON.stringify(theme)}); true`);
+      await this.evaluate(`specdeck.applyTheme(${JSON.stringify(theme)}); true`);
       await new Promise((r) => setTimeout(r, 120));
     },
 
