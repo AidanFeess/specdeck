@@ -12,12 +12,33 @@ import { dirname, join } from 'node:path';
 
 export type HandoffMethod = 'auto' | 'attach' | 'terminal' | 'clipboard';
 
+/**
+ * What kind of root a registry entry names.
+ *
+ * Absent on every entry written before OpenSpec grew workspaces and context
+ * stores, which is why it is optional and resolves to `project`. Recording the
+ * kind here is specdeck deciding what to show; OpenSpec's own registrations
+ * remain the authority on what exists, and are never written by specdeck.
+ */
+export type RootKind = 'project' | 'workspace' | 'context-store';
+
 export interface ProjectEntry {
   path: string;
   /** Optional display name overriding the directory name. */
   name?: string;
+  /** Defaults to `project` for entries written before kinds existed. */
+  kind?: RootKind;
   /** Overrides the global default when set. */
   handoffMethod?: HandoffMethod;
+}
+
+function isRootKind(value: unknown): value is RootKind {
+  return value === 'project' || value === 'workspace' || value === 'context-store';
+}
+
+/** The kind of a registry entry, defaulting the way an old entry should read. */
+export function rootKind(entry: ProjectEntry): RootKind {
+  return entry.kind ?? 'project';
 }
 
 export interface SpecdeckConfig {
@@ -54,6 +75,10 @@ function coerce(parsed: unknown): SpecdeckConfig {
       if (typeof entry.path !== 'string' || entry.path === '') continue;
       const project: ProjectEntry = { path: entry.path };
       if (typeof entry.name === 'string' && entry.name !== '') project.name = entry.name;
+      // An entry with no kind, or with one this version does not recognize,
+      // reads as a plain project. Dropping it would lose a root the user
+      // registered, which is a far worse outcome than showing it as a project.
+      if (isRootKind(entry.kind)) project.kind = entry.kind;
       if (isHandoffMethod(entry.handoffMethod)) project.handoffMethod = entry.handoffMethod;
       projects.push(project);
     }
@@ -93,10 +118,22 @@ export async function writeConfig(config: SpecdeckConfig): Promise<void> {
   await writeFile(configPath(), `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
-export async function addProject(path: string): Promise<SpecdeckConfig> {
+/**
+ * Adds a root to specdeck's registry.
+ *
+ * Deliberately runs no OpenSpec command. A workspace or context store exists
+ * because OpenSpec says it does; this only records that the user wants it on
+ * their dashboard, so removing it here can never unregister anything.
+ */
+export async function addProject(
+  path: string,
+  kind: RootKind = 'project',
+): Promise<SpecdeckConfig> {
   const config = await readConfig();
   if (!config.projects.some((project) => project.path === path)) {
-    config.projects.push({ path });
+    const entry: ProjectEntry = { path };
+    if (kind !== 'project') entry.kind = kind;
+    config.projects.push(entry);
     await writeConfig(config);
   }
   return config;

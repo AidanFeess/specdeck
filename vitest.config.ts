@@ -4,7 +4,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    // The client is plain JavaScript, so its tests are too.
+    include: ['src/**/*.test.ts', 'src/**/*.test.js', 'tests/**/*.test.ts'],
 
     // Much of this suite drives real git and OpenSpec subprocesses against real
     // repositories, because the behavior being protected is what those tools

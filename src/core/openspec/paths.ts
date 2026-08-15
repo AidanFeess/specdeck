@@ -14,12 +14,24 @@ import type { SchemaSearchPaths } from './schema.js';
  */
 
 export const OPENSPEC_DIR = 'openspec';
+/**
+ * Marks a directory as an OpenSpec workspace root.
+ *
+ * A workspace keeps its changes directly under the root rather than inside an
+ * `openspec/` directory, so this is the only thing that distinguishes one from
+ * an ordinary folder.
+ */
+export const WORKSPACE_DIR = '.openspec-workspace';
 export const CHANGES_DIR = 'changes';
 export const ARCHIVE_DIR = 'archive';
 export const SPECS_DIR = 'specs';
 export const SCHEMAS_DIR = 'schemas';
 export const CHANGE_METADATA_FILE = '.openspec.yaml';
 export const SPEC_FILE = 'spec.md';
+
+export function workspaceMarkerDir(projectRoot: string): string {
+  return joinPath(projectRoot, WORKSPACE_DIR);
+}
 
 export function openspecDir(projectRoot: string): string {
   return joinPath(projectRoot, OPENSPEC_DIR);

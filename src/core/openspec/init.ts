@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
-
 import { getWorkspaceSkillCapableTools } from '@fission-ai/openspec';
 
-import { findBundledOpenSpecRoot } from './installed.js';
+import { openspecCommand, runOpenspec } from './run.js';
 import { joinPath } from '../fs/pathutil.js';
 import type { FileSource } from '../fs/source.js';
 
@@ -88,10 +86,15 @@ export async function listInitTools(source: FileSource, projectRoot: string): Pr
   });
 }
 
+function initArgs(toolIds: string[]): string[] {
+  // Tools are always passed explicitly, because the command is interactive
+  // without them and would wait for input that cannot arrive.
+  return ['init', '.', '--tools', toolIds.length > 0 ? toolIds.join(',') : 'none'];
+}
+
 /** The exact command specdeck would run, for the user to copy and run instead. */
 export function initCommand(toolIds: string[]): string {
-  const tools = toolIds.length > 0 ? toolIds.join(',') : 'none';
-  return `openspec init . --tools ${tools}`;
+  return openspecCommand(initArgs(toolIds));
 }
 
 export interface InitOutcome {
@@ -110,60 +113,18 @@ export interface InitOutcome {
  * never installed OpenSpec can still start a project. Tools are always passed
  * explicitly, because the command is interactive without them and would hang.
  */
-export function runInit(projectRoot: string, toolIds: string[]): Promise<InitOutcome> {
-  const command = initCommand(toolIds);
-  const packageRoot = findBundledOpenSpecRoot();
+export async function runInit(projectRoot: string, toolIds: string[]): Promise<InitOutcome> {
+  const result = await runOpenspec(projectRoot, initArgs(toolIds));
 
-  if (packageRoot === undefined) {
-    return Promise.resolve({
-      ok: false,
-      command,
-      exitCode: 1,
-      output: '',
-      message:
-        'specdeck could not find its bundled copy of OpenSpec. Run the command yourself instead.',
-    });
-  }
-
-  const binary = joinPath(packageRoot, 'bin', 'openspec.js');
-  const args = [binary, 'init', '.', '--tools', toolIds.length > 0 ? toolIds.join(',') : 'none'];
-
-  return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      args,
-      {
-        cwd: projectRoot,
-        timeout: 120_000,
-        maxBuffer: 8 * 1024 * 1024,
-        windowsHide: true,
-        // Colour codes would end up rendered as escape sequences in the browser.
-        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
-      },
-      (error, stdout, stderr) => {
-        const output = `${stdout}${stderr}`.trim();
-        if (!error) {
-          resolve({
-            ok: true,
-            command,
-            exitCode: 0,
-            output,
-            message: 'OpenSpec is set up in this folder.',
-          });
-          return;
-        }
-        const exitCode =
-          typeof (error as { code?: unknown }).code === 'number'
-            ? (error as { code: number }).code
-            : 1;
-        resolve({
-          ok: false,
-          command,
-          exitCode,
-          output: output === '' ? error.message : output,
-          message: 'Initialization did not complete. You can run the command yourself instead.',
-        });
-      },
-    );
-  });
+  return {
+    ok: result.ok,
+    command: result.command,
+    exitCode: result.code,
+    output: result.output,
+    message: result.ok
+      ? 'OpenSpec is set up in this folder.'
+      : (result.failure === 'missing-openspec' && result.message !== undefined
+          ? result.message
+          : 'Initialization did not complete. You can run the command yourself instead.'),
+  };
 }

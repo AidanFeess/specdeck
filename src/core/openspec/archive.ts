@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process';
-
-import { findBundledOpenSpecRoot } from './installed.js';
-import { joinPath } from '../fs/pathutil.js';
+import { openspecCommand, parseJsonOutput, runOpenspec, type OpenspecResult } from './run.js';
 
 /**
  * Archiving a change, and checking first whether that is a good idea.
@@ -35,40 +32,6 @@ export interface ArchiveOutcome {
   message: string;
 }
 
-function openspecArgs(packageRoot: string, args: string[]): { binary: string; argv: string[] } {
-  return { binary: process.execPath, argv: [joinPath(packageRoot, 'bin', 'openspec.js'), ...args] };
-}
-
-function run(
-  cwd: string,
-  binary: string,
-  argv: string[],
-): Promise<{ ok: boolean; code: number; output: string }> {
-  return new Promise((resolve) => {
-    execFile(
-      binary,
-      argv,
-      {
-        cwd,
-        timeout: 120_000,
-        maxBuffer: 8 * 1024 * 1024,
-        windowsHide: true,
-        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
-      },
-      (error, stdout, stderr) => {
-        const output = `${stdout}${stderr}`.trim();
-        const code =
-          error && typeof (error as { code?: unknown }).code === 'number'
-            ? (error as { code: number }).code
-            : error
-              ? 1
-              : 0;
-        resolve({ ok: !error, code, output });
-      },
-    );
-  });
-}
-
 /**
  * Gathers what the user needs to see before archiving.
  */
@@ -78,40 +41,29 @@ export async function preflightArchive(
   completedTasks: number,
   totalTasks: number,
 ): Promise<ArchivePreflight> {
-  const command = `openspec archive ${changeName} -y`;
   const preflight: ArchivePreflight = {
     changeName,
     incompleteTasks: Math.max(0, totalTasks - completedTasks),
     totalTasks,
     validationIssues: [],
     valid: true,
-    command,
+    command: archiveCommand(changeName),
   };
 
-  const packageRoot = findBundledOpenSpecRoot();
-  if (packageRoot === undefined) return preflight;
+  const result = await runOpenspec(projectRoot, ['validate', changeName, '--json']);
 
-  const { binary, argv } = openspecArgs(packageRoot, ['validate', changeName, '--json']);
-  const result = await run(projectRoot, binary, argv);
+  // Validation output that cannot be read is not a reason to block. The task
+  // counts alone are enough for the user to decide.
+  const parsed = parseJsonOutput<{ items?: Array<{ valid?: unknown; issues?: unknown }> }>(
+    result.output,
+  );
 
-  try {
-    const start = result.output.indexOf('{');
-    if (start === -1) return preflight;
-    const parsed: unknown = JSON.parse(result.output.slice(start));
-    const items = (parsed as { items?: Array<{ valid?: unknown; issues?: unknown }> }).items ?? [];
-    for (const item of items) {
-      if (item.valid === false) preflight.valid = false;
-      if (Array.isArray(item.issues)) {
-        for (const issue of item.issues) {
-          preflight.validationIssues.push(
-            typeof issue === 'string' ? issue : JSON.stringify(issue),
-          );
-        }
-      }
+  for (const item of parsed?.items ?? []) {
+    if (item.valid === false) preflight.valid = false;
+    if (!Array.isArray(item.issues)) continue;
+    for (const issue of item.issues) {
+      preflight.validationIssues.push(typeof issue === 'string' ? issue : JSON.stringify(issue));
     }
-  } catch {
-    // Validation output that cannot be parsed is not a reason to block. The
-    // task counts alone are enough for the user to decide.
   }
 
   return preflight;
@@ -129,29 +81,39 @@ export async function archiveChange(
   projectRoot: string,
   changeName: string,
 ): Promise<ArchiveOutcome> {
-  const command = `openspec archive ${changeName} -y`;
-  const packageRoot = findBundledOpenSpecRoot();
-
-  if (packageRoot === undefined) {
-    return {
-      ok: false,
-      command,
-      exitCode: 1,
-      output: '',
-      message: 'specdeck could not find its bundled copy of OpenSpec. Run the command yourself.',
-    };
-  }
-
-  const { binary, argv } = openspecArgs(packageRoot, ['archive', changeName, '-y']);
-  const result = await run(projectRoot, binary, argv);
+  const result = await runOpenspec(projectRoot, archiveArgs(changeName));
 
   return {
     ok: result.ok,
-    command,
+    command: result.command,
     exitCode: result.code,
     output: result.output,
-    message: result.ok
-      ? `Archived ${changeName}.`
-      : 'The archive did not complete. Nothing else was changed.',
+    message: result.ok ? `Archived ${changeName}.` : failureMessage(result),
   };
+}
+
+/**
+ * Explains an archive failure without overstating what is known.
+ *
+ * A command that never ran definitely changed nothing. A command killed partway
+ * through might have merged some specs already, and saying otherwise would be a
+ * confident lie about the one action that cannot be undone.
+ */
+function failureMessage(result: OpenspecResult): string {
+  if (result.failure === 'missing-openspec') {
+    return result.message ?? 'specdeck could not find its bundled copy of OpenSpec.';
+  }
+  if (result.failure === 'timeout') {
+    return `${result.message ?? 'The archive was stopped before it finished.'} It may have partly completed, so check the change before running it again.`;
+  }
+  return 'The archive did not complete. Nothing else was changed.';
+}
+
+function archiveArgs(changeName: string): string[] {
+  return ['archive', changeName, '-y'];
+}
+
+/** The command specdeck would run, for the user to copy and run instead. */
+export function archiveCommand(changeName: string): string {
+  return openspecCommand(archiveArgs(changeName));
 }

@@ -1,10 +1,11 @@
 // @ts-check
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'src/client/generated/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -51,9 +52,41 @@ export default tseslint.config(
     },
   },
   {
+    // The client is plain JavaScript, bundled rather than compiled, so it is not
+    // part of the type-checked project.
+    //
+    // `no-undef` is the rule that earns its keep here. The client was split out
+    // of one 1,500-line scope where every function could see every other; with
+    // real modules, a reference that was not imported becomes an undefined
+    // global that no type check and no bundler would catch, and that only fails
+    // in a browser. This is the net under that.
+    files: ['src/client/**/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      parserOptions: { projectService: false, project: null },
+      globals: { ...globals.browser, ...globals.vitest },
+    },
+    rules: {
+      'no-undef': 'error',
+      'no-console': ['error', { allow: ['error', 'warn'] }],
+
+      // `x == null` is the deliberate "null or undefined" idiom throughout the
+      // client. Rewriting it to `===` would silently change what these checks
+      // match, so the null case is exempt rather than the rule being dropped.
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+
+      // Storage access is wrapped in try/catch because a browser with storage
+      // disabled throws on read. There is nothing to do about it and nothing
+      // useful to log, so the empty catch is the honest handler.
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
     // Build and maintenance scripts run against the compiled output rather than
     // the source tree, so they sit outside the type-checked project.
-    files: ['**/*.js', '**/*.mjs', 'scripts/**'],
+    files: ['**/*.mjs', 'scripts/**', 'eslint.config.js'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       parserOptions: { projectService: false, project: null },

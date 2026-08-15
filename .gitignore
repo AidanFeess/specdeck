@@ -5,6 +5,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# The bundled client document, rebuilt by `npm run build:client`. Generated
+# rather than committed so a minified bundle never shows up in a diff.
+src/client/generated/
+
 # Test output
 coverage/
 

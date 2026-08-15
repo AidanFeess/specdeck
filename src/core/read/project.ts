@@ -21,6 +21,7 @@ import {
   parseArchivedDirName,
   schemaSearchPaths,
   SPEC_FILE,
+  workspaceMarkerDir,
 } from '../openspec/paths.js';
 import { conventionalPlanningHome, resolvePlanningHome } from '../openspec/planning-home.js';
 import {
@@ -295,8 +296,13 @@ export async function readProject(
     };
   }
 
+  // A repository keeps its planning in `openspec/`; a workspace keeps its
+  // changes directly under the root and is identified by its marker directory
+  // instead. Either one is a project specdeck can read, and requiring the
+  // former would make every workspace look like an uninitialized folder.
   const openspec = await source.list(openspecDir(projectRoot));
-  if (openspec === undefined) {
+  const workspace = await source.list(workspaceMarkerDir(projectRoot));
+  if (openspec === undefined && workspace === undefined) {
     return {
       ok: false,
       failure: {

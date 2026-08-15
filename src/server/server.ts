@@ -9,6 +9,13 @@ import { specdeckVersion } from '../core/version.js';
 import { detectHarnesses } from '../core/openspec/harness.js';
 import { listInitTools, runInit, type InitTool } from '../core/openspec/init.js';
 import { toggleTask } from '../core/write/toggle-task.js';
+import { readArtifact, writeArtifact } from '../core/write/artifact.js';
+import { validateChange } from '../core/openspec/validate.js';
+import { readStores } from '../core/openspec/stores.js';
+import { indexChanges } from '../core/read/index-changes.js';
+import { deriveApproval } from '../core/approval/derive.js';
+import { approveChange, preflightApproval } from '../core/approval/commit.js';
+import { createChange, linkInitiative, updateInstructions } from '../core/openspec/actions.js';
 import {
   computeSync,
   remoteOnlyChanges,
@@ -29,6 +36,7 @@ import {
 import { browseForFolder } from './browse.js';
 import { watchProject, type WatchHandle } from './watch.js';
 import { APP_HTML } from './app-html.js';
+import { CONTENT_SECURITY_POLICY } from './csp.js';
 
 /**
  * The local HTTP server.
@@ -166,6 +174,27 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     };
   }
 
+  /**
+   * Whether a resolved path lies inside the project that is open.
+   *
+   * Every write and every file read the interface can ask for is fenced by this.
+   * The server is loopback only, but the page it serves renders content from a
+   * repository, so a path arriving in a request is not automatically a path the
+   * user meant to name.
+   */
+  const insideProject = (target: string): boolean => {
+    const root = resolve(activeProject);
+    return target === root || target.startsWith(root + sep);
+  };
+
+  /** Looks up a change in the open project, or undefined when there is none. */
+  const findChange = async (name: string) => {
+    if (name === '') return undefined;
+    const project = await readProject(localFileSource, activeProject);
+    if (!project.ok) return undefined;
+    return project.snapshot.changes.find((entry) => entry.name === name);
+  };
+
   const server = createServer((request, response) => {
     void (async (): Promise<void> => {
       const url = new URL(request.url ?? '/', `http://${host}`);
@@ -184,7 +213,15 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
       }
 
       if (path === '/' || path === '/index.html') {
-        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          // Repository markdown is rendered on this page, and this page can
+          // write files. The policy is the layer that holds if the sanitizer
+          // ever does not.
+          'content-security-policy': CONTENT_SECURITY_POLICY,
+          'referrer-policy': 'no-referrer',
+          'x-content-type-options': 'nosniff',
+        });
         response.end(APP_HTML);
         return;
       }
@@ -221,13 +258,15 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
       }
 
       if (path === '/api/projects' && request.method === 'POST') {
-        const body = await readBody(request);
-        const target = (body as { path?: unknown } | undefined)?.path;
+        const body = (await readBody(request)) as { path?: unknown; kind?: unknown } | undefined;
+        const target = body?.path;
         if (typeof target !== 'string' || target === '') {
           json(response, 400, { error: 'A project path is required.' });
           return;
         }
-        await addProject(resolve(target));
+        const kind =
+          body?.kind === 'workspace' || body?.kind === 'context-store' ? body.kind : 'project';
+        await addProject(resolve(target), kind);
         json(response, 200, await buildState());
         return;
       }
@@ -263,16 +302,167 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
           return;
         }
 
-        // The only write specdeck performs, so it is fenced to the project the
-        // user actually has open. A path outside it is refused outright.
-        const projectRoot = resolve(activeProject);
-        if (!tasksPath.startsWith(projectRoot + sep) && tasksPath !== projectRoot) {
+        // Fenced to the project the user actually has open, like every other
+        // path the interface can name.
+        if (!insideProject(tasksPath)) {
           json(response, 403, { error: 'That file is outside the project that is open.' });
           return;
         }
 
         const outcome = await toggleTask(tasksPath, line, text, completed);
         json(response, outcome.ok ? 200 : 409, outcome);
+        return;
+      }
+
+      // Approval, derived from git every time it is asked for. There is no
+      // cache because there is no stored state to cache: the repository is the
+      // only copy.
+      if (path === '/api/change/new' && request.method === 'POST') {
+        const body = (await readBody(request)) as { name?: unknown; schema?: unknown } | undefined;
+        const name = typeof body?.name === 'string' ? body.name.trim() : '';
+        if (name === '') {
+          json(response, 400, { error: 'A change name is required.' });
+          return;
+        }
+        const schema = typeof body?.schema === 'string' ? body.schema : undefined;
+        const outcome = await createChange(resolve(activeProject), name, schema);
+        json(response, outcome.ok ? 200 : 400, { ...outcome, state: await buildState() });
+        return;
+      }
+
+      if (path === '/api/update' && request.method === 'POST') {
+        const outcome = await updateInstructions(resolve(activeProject));
+        json(response, outcome.ok ? 200 : 400, { ...outcome, state: await buildState() });
+        return;
+      }
+
+      if (path === '/api/initiative/link' && request.method === 'POST') {
+        const body = (await readBody(request)) as
+          { change?: unknown; initiative?: unknown; store?: unknown } | undefined;
+        const name = typeof body?.change === 'string' ? body.change : '';
+        const initiative = typeof body?.initiative === 'string' ? body.initiative.trim() : '';
+
+        // The change has to be one in the open project. A name that is not
+        // spawns nothing at all.
+        const change = await findChange(name);
+        if (change === undefined) {
+          json(response, 404, { error: 'No such change in the project that is open.' });
+          return;
+        }
+        if (initiative === '') {
+          json(response, 400, { error: 'An initiative id is required.' });
+          return;
+        }
+
+        const store = typeof body?.store === 'string' ? body.store : undefined;
+        const outcome = await linkInitiative(
+          resolve(activeProject),
+          change.name,
+          initiative,
+          store,
+        );
+        json(response, outcome.ok ? 200 : 400, { ...outcome, state: await buildState() });
+        return;
+      }
+
+      // Every change in the open project, for the board's indicators. Kept off
+      // the state payload because it is a `git log` per change and the state
+      // payload rebuilds on every filesystem event.
+      if (path === '/api/approvals') {
+        const project = await readProject(localFileSource, activeProject);
+        if (!project.ok) {
+          json(response, 200, { approvals: {}, checkedAt: new Date().toISOString() });
+          return;
+        }
+        const root = resolve(activeProject);
+        const entries = await Promise.all(
+          project.snapshot.changes.map(
+            async (change) =>
+              [change.name, await deriveApproval(root, change.name, change.dir)] as const,
+          ),
+        );
+        json(response, 200, {
+          approvals: Object.fromEntries(entries),
+          checkedAt: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (path === '/api/approval') {
+        const name = url.searchParams.get('change') ?? '';
+        const change = await findChange(name);
+        if (change === undefined) {
+          json(response, 404, { error: 'No such change in the project that is open.' });
+          return;
+        }
+        const root = resolve(activeProject);
+        // Validation is reported alongside, never as a gate. Whether a change is
+        // valid and whether a person agrees with it are different questions, and
+        // a reviewer may quite reasonably sign off on something OpenSpec is
+        // still complaining about.
+        const [approval, preflight, validation] = await Promise.all([
+          deriveApproval(root, change.name, change.dir),
+          preflightApproval(root, change.name, change.dir),
+          validateChange(root, change.name),
+        ]);
+        json(response, 200, { approval, preflight, validation });
+        return;
+      }
+
+      if (path === '/api/approve' && request.method === 'POST') {
+        const body = (await readBody(request)) as { change?: unknown } | undefined;
+        const name = typeof body?.change === 'string' ? body.change : '';
+        const change = await findChange(name);
+        if (change === undefined) {
+          json(response, 404, { error: 'No such change in the project that is open.' });
+          return;
+        }
+        const root = resolve(activeProject);
+        const outcome = await approveChange(root, change.name, change.dir);
+        json(response, outcome.ok ? 200 : 400, {
+          ...outcome,
+          approval: await deriveApproval(root, change.name, change.dir),
+        });
+        return;
+      }
+
+      // The cross-root change list. Every registered root is read, so this is
+      // on demand rather than on the state payload.
+      if (path === '/api/changes') {
+        const config = await readConfig();
+        const byResolved = new Map<string, string | undefined>();
+        for (const entry of config.projects) byResolved.set(resolve(entry.path), entry.name);
+        const active = resolve(activeProject);
+        if (!byResolved.has(active)) byResolved.set(active, undefined);
+
+        const roots = [...byResolved.entries()].map(([target, name]) =>
+          name === undefined ? { path: target } : { path: target, name },
+        );
+        json(response, 200, { activeProject: active, ...(await indexChanges(roots)) });
+        return;
+      }
+
+      // Several process spawns per call, so on demand only and never on the
+      // path that rebuilds when a file changes.
+      if (path === '/api/stores') {
+        json(response, 200, await readStores(resolve(activeProject)));
+        return;
+      }
+
+      // On demand, never on the state payload: each call is a process spawn.
+      if (path === '/api/validate') {
+        const name = url.searchParams.get('change') ?? '';
+        if (name === '') {
+          json(response, 400, { error: 'A change name is required.' });
+          return;
+        }
+        const project = await readProject(localFileSource, activeProject);
+        const known = project.ok && project.snapshot.changes.some((entry) => entry.name === name);
+        if (!known) {
+          json(response, 404, { error: 'No such change in the project that is open.' });
+          return;
+        }
+        json(response, 200, await validateChange(resolve(activeProject), name));
         return;
       }
 
@@ -427,12 +617,54 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
           json(response, 400, { error: 'A file path is required.' });
           return;
         }
-        const projectRoot = resolve(activeProject);
-        if (!target.startsWith(projectRoot + sep)) {
+        if (!insideProject(target)) {
           json(response, 403, { error: 'That file is outside the project that is open.' });
           return;
         }
         json(response, 200, await openInEditor(target));
+        return;
+      }
+
+      // Reading one artifact's exact bytes, with the hash a later save has to
+      // still match. Read on demand rather than carried on the state payload,
+      // because a project's artifacts are far larger than its board.
+      if (path === '/api/artifact' && request.method !== 'POST') {
+        const target = url.searchParams.get('path');
+        const resolved = target === null ? undefined : resolve(target);
+        if (resolved === undefined) {
+          json(response, 400, { error: 'A file path is required.' });
+          return;
+        }
+        if (!insideProject(resolved)) {
+          json(response, 403, { error: 'That file is outside the project that is open.' });
+          return;
+        }
+        const outcome = await readArtifact(resolved);
+        json(response, outcome.ok ? 200 : 404, outcome);
+        return;
+      }
+
+      if (path === '/api/artifact' && request.method === 'POST') {
+        const body = (await readBody(request)) as
+          { path?: unknown; text?: unknown; hash?: unknown } | undefined;
+
+        const target = typeof body?.path === 'string' ? resolve(body.path) : undefined;
+        const text = typeof body?.text === 'string' ? body.text : undefined;
+        const baseHash = typeof body?.hash === 'string' ? body.hash : undefined;
+
+        if (target === undefined || text === undefined || baseHash === undefined) {
+          json(response, 400, { error: 'path, text, and hash are required.' });
+          return;
+        }
+        if (!insideProject(target)) {
+          json(response, 403, { error: 'That file is outside the project that is open.' });
+          return;
+        }
+
+        const outcome = await writeArtifact(target, text, baseHash);
+        // A refused write is a conflict, not a server error: the file is fine,
+        // the base the edit started from is not.
+        json(response, outcome.ok ? 200 : outcome.reason === 'conflict' ? 409 : 400, outcome);
         return;
       }
 

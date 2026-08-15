@@ -240,13 +240,22 @@ describe('readProject on specdeck itself', () => {
     expect(change?.tasks.total).toBeGreaterThan(50);
     expect(change?.tasks.completed).toBeGreaterThan(0);
 
-    // The lane is asserted against the task counts rather than pinned to a
-    // value. An earlier version of this test hardcoded 'in-progress', which was
-    // true the afternoon it was written and broke the moment the last task was
-    // ticked. Deriving the expectation the same way the product does is the
-    // actual invariant worth protecting, and it never goes stale.
+    // The lane is asserted against the task counts and location rather than
+    // pinned to a value. An earlier version of this test hardcoded
+    // 'in-progress', which was true the afternoon it was written and broke the
+    // moment the last task was ticked; pinning 'done' then broke again the
+    // moment the change was archived. Deriving the expectation the same way the
+    // product does is the actual invariant worth protecting, and it never goes
+    // stale.
     const { completed, total } = change?.tasks ?? { completed: 0, total: 0 };
-    const expectedLane = completed === 0 ? 'ready' : completed >= total ? 'done' : 'in-progress';
+    const expectedLane =
+      change?.location === 'archived'
+        ? 'archived'
+        : completed === 0
+          ? 'ready'
+          : completed >= total
+            ? 'done'
+            : 'in-progress';
     expect(change?.lane).toBe(expectedLane);
     expect(change?.capabilities).toContain('git-sync');
     expect(change?.deltaSpecs).toHaveLength(9);
