@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -141,43 +141,109 @@ async function openTerminal(projectRoot: string, harnessId: string): Promise<Han
     };
   }
 
+  return openTerminalAt(
+    projectRoot,
+    [command],
+    'terminal',
+    `Opened a terminal running ${command}.`,
+  );
+}
+
+/**
+ * Opens a terminal in a directory and runs a command there.
+ *
+ * The directory is never written into the command string. On Windows, a command
+ * containing a quoted path has to be quoted again as a single argv element,
+ * and the nested quotes collide: cmd receives a malformed path and answers with
+ * "The filename, directory name, or volume label syntax is incorrect". Setting
+ * the working directory on the spawn instead removes the problem entirely,
+ * rather than trying to escape around it.
+ *
+ * It also makes a bad path a real spawn error, because the runtime rejects a
+ * cwd that does not exist. Previously the window opened and failed on its own,
+ * where nothing could observe it.
+ */
+async function openTerminalAt(
+  projectRoot: string,
+  argv: string[],
+  method: HandoffMethod,
+  successMessage: string,
+): Promise<HandoffAttempt> {
+  if (!existsSync(projectRoot)) {
+    return {
+      ok: false,
+      method,
+      message: `${projectRoot} no longer exists, so specdeck could not open a terminal there.`,
+    };
+  }
+
   try {
     if (process.platform === 'win32') {
-      // `start` needs a title argument before the command when anything is
-      // quoted, hence the empty string.
-      spawn('cmd.exe', ['/c', 'start', '', 'cmd', '/k', `cd /d "${projectRoot}" && ${command}`], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: false,
-      }).unref();
+      // `start` takes a window title first, hence the empty string. Everything
+      // after `/k` is joined into the command, so each part stays its own argv
+      // element and nothing needs quoting.
+      await spawnDetached('cmd.exe', ['/c', 'start', '', 'cmd', '/k', ...argv], projectRoot);
     } else if (process.platform === 'darwin') {
-      const script = `tell application "Terminal" to do script "cd '${projectRoot.replace(/'/g, "'\\''")}' && ${command}"`;
-      spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref();
+      // Terminal.app always opens a new shell in the home directory, so this is
+      // the one platform that genuinely needs a cd. Single quotes are escaped
+      // the POSIX way.
+      const quoted = projectRoot.replace(/'/g, `'\\''`);
+      const script = `tell application "Terminal" to do script "cd '${quoted}' && ${argv.join(' ')}"`;
+      await spawnDetached('osascript', ['-e', script], projectRoot);
     } else {
-      spawn(
+      await spawnDetached(
         'x-terminal-emulator',
-        ['-e', `bash -lc 'cd "${projectRoot}" && ${command}; exec bash'`],
-        {
-          detached: true,
-          stdio: 'ignore',
-        },
-      ).unref();
+        ['-e', 'bash', '-lc', `${argv.join(' ')}; exec bash`],
+        projectRoot,
+      );
     }
 
     return {
       ok: true,
-      method: 'terminal',
-      message: `Opened a terminal running ${command}. The prompt is on your clipboard, ready to paste.`,
+      method,
+      message: `${successMessage} The prompt is on your clipboard, ready to paste.`,
     };
   } catch (error) {
     // Implemented and attempted, so this is a runtime failure and is reported.
     return {
       ok: false,
-      method: 'terminal',
+      method,
       message: 'specdeck could not open a terminal.',
       detail: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Spawns a detached process, surfacing a launch failure instead of losing it.
+ *
+ * A detached spawn reports failure asynchronously through an error event, so
+ * returning immediately would report success for a process that never started.
+ * This waits briefly for that event before treating the launch as good.
+ */
+function spawnDetached(command: string, args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const child = spawn(command, args, {
+      cwd,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.unref();
+      resolve();
+    }, 300);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -201,37 +267,14 @@ async function attachSession(projectRoot: string, sessionId: string): Promise<Ha
     };
   }
 
-  try {
-    if (process.platform === 'win32') {
-      spawn(
-        'cmd.exe',
-        ['/c', 'start', '', 'cmd', '/k', `cd /d "${projectRoot}" && claude --resume ${sessionId}`],
-        { detached: true, stdio: 'ignore', windowsHide: false },
-      ).unref();
-    } else if (process.platform === 'darwin') {
-      const script = `tell application "Terminal" to do script "cd '${projectRoot.replace(/'/g, "'\\''")}' && claude --resume ${sessionId}"`;
-      spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref();
-    } else {
-      spawn(
-        'x-terminal-emulator',
-        ['-e', `bash -lc 'cd "${projectRoot}" && claude --resume ${sessionId}; exec bash'`],
-        { detached: true, stdio: 'ignore' },
-      ).unref();
-    }
-
-    return {
-      ok: true,
-      method: 'attach',
-      message: 'Opened that session. The prompt is on your clipboard, ready to paste.',
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      method: 'attach',
-      message: 'specdeck could not open that session.',
-      detail: error instanceof Error ? error.message : String(error),
-    };
-  }
+  // Resuming is cwd-scoped: the session only resolves from the directory it was
+  // started in, which the spawn's working directory now guarantees.
+  return openTerminalAt(
+    projectRoot,
+    ['claude', '--resume', sessionId],
+    'attach',
+    'Opened that session.',
+  );
 }
 
 // ---------------------------------------------------------------------------

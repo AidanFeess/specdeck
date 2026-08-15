@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -73,6 +73,34 @@ describe('dispatch', () => {
       sessionId: 'would-be-used-if-the-ceiling-were-ignored',
     });
     expect(result.method).toBe('clipboard');
+  });
+});
+
+describe('terminal launch', () => {
+  it('reports a failure when the project directory is gone', async () => {
+    // Previously the window opened, cmd failed on its own with "The filename,
+    // directory name, or volume label syntax is incorrect", and specdeck still
+    // reported the handoff as succeeded because the spawn itself worked.
+    const result = await dispatch({
+      projectRoot: join(sandbox(), 'deleted-since'),
+      harnessId: 'claude',
+      preferred: 'terminal',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.capabilityGap).toBeUndefined();
+    expect(result.message).toContain('no longer exists');
+  });
+
+  it('never puts the project path inside the command string', () => {
+    // The original bug: a path embedded in a cmd /k argument has to be quoted
+    // again as one argv element, and the nested quotes collide. The path now
+    // travels as the spawn's working directory instead, so this asserts the
+    // source contains no such construction.
+    const source = readFileSync(
+      new URL('./handoff.ts', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'),
+      'utf8',
+    );
+    expect(source).not.toContain('cd /d');
   });
 });
 
