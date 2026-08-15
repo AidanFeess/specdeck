@@ -122,6 +122,18 @@ function commandExists(command: string): Promise<boolean> {
  * is one keypress.
  */
 async function openTerminal(projectRoot: string, harnessId: string): Promise<HandoffAttempt> {
+  // Checked before asking which tools are installed, deliberately. A missing
+  // project directory is a hard failure for every terminal-based method, not a
+  // capability gap, so falling through to clipboard would hide a broken path
+  // behind whatever happens to be on this machine's PATH.
+  if (!existsSync(projectRoot)) {
+    return {
+      ok: false,
+      method: 'terminal',
+      message: `${projectRoot} no longer exists, so specdeck could not open a terminal there.`,
+    };
+  }
+
   const command = TERMINAL_COMMANDS[harnessId];
   if (command === undefined) {
     return {
