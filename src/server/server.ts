@@ -2,7 +2,18 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { resolve, sep } from 'node:path';
 
 import { localFileSource } from '../core/fs/node-source.js';
-import { readConfig, writeConfig, addProject, removeProject } from '../core/config/store.js';
+import {
+  readConfig,
+  writeConfig,
+  addProject,
+  removeProject,
+  setProjectStarred,
+  setProjectOrder,
+  setEditorPreference,
+  pathKey,
+  samePath,
+  type EditorPreference,
+} from '../core/config/store.js';
 import { readProject } from '../core/read/project.js';
 import { checkBundledOpenSpec } from '../core/openspec/installed.js';
 import { specdeckVersion } from '../core/version.js';
@@ -17,8 +28,10 @@ import {
 } from '../core/git/sync.js';
 import { fetchRemote, pullFastForward } from '../core/git/repo.js';
 import { readOverview } from '../core/read/overview.js';
+import { orderProjects, isProjectSort, type ProjectPlacement } from '../core/read/order.js';
 import { archiveChange, preflightArchive } from '../core/openspec/archive.js';
-import { openInEditor } from './editor.js';
+import { openInEditor, type EditorChoice } from './editor.js';
+import { detectEditors } from './editors.js';
 import { dispatch, discoverSessions } from './handoff.js';
 import {
   historyForPrefix,
@@ -287,18 +300,71 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
       if (path === '/api/overview') {
         const config = await readConfig();
 
-        // Paths are normalized before deduping. A config written with forward
-        // slashes and a resolved working directory are the same folder, and
-        // listing it twice would be both wrong and confusing.
-        const byResolved = new Map<string, string | undefined>();
-        for (const entry of config.projects) byResolved.set(resolve(entry.path), entry.name);
+        // Paths are compared in normalized form before deduping. A config
+        // written with forward slashes and a resolved working directory are the
+        // same folder, and listing it twice would be both wrong and confusing.
+        // The displayed path stays in resolved form so every later lookup, here
+        // and in the client, is against one spelling.
+        const byKey = new Map<string, { path: string; name?: string }>();
+        for (const entry of config.projects) {
+          const key = pathKey(entry.path);
+          if (byKey.has(key)) continue;
+          const canonical: { path: string; name?: string } = { path: resolve(entry.path) };
+          if (entry.name !== undefined) canonical.name = entry.name;
+          byKey.set(key, canonical);
+        }
         const active = resolve(activeProject);
-        if (!byResolved.has(active)) byResolved.set(active, undefined);
+        if (!byKey.has(pathKey(active))) byKey.set(pathKey(active), { path: active });
 
         const overviews = await Promise.all(
-          [...byResolved.entries()].map(([target, name]) => readOverview(target, name)),
+          [...byKey.values()].map((entry) => readOverview(entry.path, entry.name)),
         );
-        json(response, 200, { activeProject: active, overviews });
+
+        const placements = new Map<string, ProjectPlacement>();
+        for (const entry of config.projects) {
+          const canonical = byKey.get(pathKey(entry.path));
+          if (canonical === undefined) continue;
+          const placement: ProjectPlacement = { path: canonical.path };
+          if (entry.starred === true) placement.starred = true;
+          if (entry.order !== undefined) placement.order = entry.order;
+          placements.set(placement.path, placement);
+        }
+
+        const sortParam = url.searchParams.get('sort');
+        const sort = isProjectSort(sortParam) ? sortParam : 'manual';
+
+        json(response, 200, {
+          activeProject: active,
+          sort,
+          overviews: orderProjects(overviews, placements, sort),
+          placements: [...placements.values()],
+        });
+        return;
+      }
+
+      if (path === '/api/projects/star' && request.method === 'POST') {
+        const body = (await readBody(request)) as { path?: unknown; starred?: unknown } | undefined;
+        const target = typeof body?.path === 'string' ? resolve(body.path) : undefined;
+        if (target === undefined) {
+          json(response, 400, { error: 'A project path is required.' });
+          return;
+        }
+        await setProjectStarred(target, body?.starred === true);
+        json(response, 200, { ok: true });
+        return;
+      }
+
+      if (path === '/api/projects/order' && request.method === 'POST') {
+        const body = (await readBody(request)) as { paths?: unknown } | undefined;
+        if (!Array.isArray(body?.paths)) {
+          json(response, 400, { error: 'An ordered list of paths is required.' });
+          return;
+        }
+        const paths = body.paths
+          .filter((entry): entry is string => typeof entry === 'string')
+          .map((entry) => resolve(entry));
+        await setProjectOrder(paths);
+        json(response, 200, { ok: true });
         return;
       }
 
@@ -420,8 +486,30 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
         return;
       }
 
+      if (path === '/api/editors') {
+        const config = await readConfig();
+        const body: {
+          editors: Awaited<ReturnType<typeof detectEditors>>;
+          remembered?: EditorPreference;
+        } = {
+          editors: await detectEditors(),
+        };
+        if (config.defaults.editor !== undefined) body.remembered = config.defaults.editor;
+        json(response, 200, body);
+        return;
+      }
+
       if (path === '/api/editor' && request.method === 'POST') {
-        const body = (await readBody(request)) as { path?: unknown } | undefined;
+        const body = (await readBody(request)) as
+          | {
+              path?: unknown;
+              command?: unknown;
+              system?: unknown;
+              remember?: unknown;
+              label?: unknown;
+            }
+          | undefined;
+
         const target = typeof body?.path === 'string' ? resolve(body.path) : undefined;
         if (target === undefined) {
           json(response, 400, { error: 'A file path is required.' });
@@ -432,7 +520,68 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
           json(response, 403, { error: 'That file is outside the project that is open.' });
           return;
         }
-        json(response, 200, await openInEditor(target));
+
+        const config = await readConfig();
+        let choice: EditorChoice | undefined;
+
+        if (body?.system === true) choice = { kind: 'system' };
+        else if (typeof body?.command === 'string' && body.command !== '') {
+          choice = { kind: 'command', command: body.command };
+        } else if (config.defaults.editor !== undefined) {
+          const stored = config.defaults.editor;
+          choice =
+            stored.kind === 'system' || stored.command === undefined
+              ? { kind: 'system' }
+              : { kind: 'command', command: stored.command };
+        }
+
+        if (choice === undefined) {
+          // No choice supplied and nothing remembered, so the client asks.
+          json(response, 200, { ok: false, needsChoice: true });
+          return;
+        }
+
+        const outcome = await openInEditor(target, choice);
+
+        // Remember only on success. Storing a preference that just failed would
+        // make every later open fail the same way.
+        if (outcome.ok && body?.remember === true) {
+          const preference: EditorPreference =
+            choice.kind === 'system'
+              ? { kind: 'system' }
+              : { kind: 'command', command: choice.command };
+          if (typeof body.label === 'string' && body.label !== '') preference.label = body.label;
+          await setEditorPreference(preference);
+        }
+
+        json(response, outcome.ok ? 200 : 409, outcome);
+        return;
+      }
+
+      if (path === '/api/settings/editor' && request.method === 'POST') {
+        const body = (await readBody(request)) as
+          { clear?: unknown; system?: unknown; command?: unknown; label?: unknown } | undefined;
+
+        if (body?.clear === true) {
+          await setEditorPreference(undefined);
+          json(response, 200, await buildState());
+          return;
+        }
+
+        let preference: EditorPreference | undefined;
+        if (body?.system === true) preference = { kind: 'system' };
+        else if (typeof body?.command === 'string' && body.command !== '') {
+          preference = { kind: 'command', command: body.command };
+          if (typeof body.label === 'string' && body.label !== '') preference.label = body.label;
+        }
+
+        if (preference === undefined) {
+          json(response, 400, { error: 'An editor or the system default is required.' });
+          return;
+        }
+
+        await setEditorPreference(preference);
+        json(response, 200, await buildState());
         return;
       }
 
@@ -452,7 +601,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
         const config = await readConfig();
         if (body?.scope === 'project') {
           const target = resolve(activeProject);
-          const entry = config.projects.find((p2) => resolve(p2.path) === target);
+          const entry = config.projects.find((p2) => samePath(p2.path, target));
           if (entry === undefined) config.projects.push({ path: target, handoffMethod: method });
           else entry.handoffMethod = method;
         } else {

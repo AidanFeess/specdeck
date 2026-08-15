@@ -93,6 +93,25 @@ describe('served client document', () => {
     expect(script.split('restoreScroll(scroll)').length - 1).toBeGreaterThanOrEqual(3);
   });
 
+  it('does not rebuild the projects grid while a drag is in progress', () => {
+    // Files change constantly while an agent works, and every change rescans.
+    // Rebuilding the grid mid drag replaces the node under the pointer, which
+    // cancels the drag. This checks the guard is present and that the deferred
+    // rebuild is actually run afterwards rather than dropped.
+    const script = extractScript();
+    expect(script).toContain('if (draggingProject !== null) { dragPending = true; return; }');
+    expect(script).toContain('if (dragPending) { dragPending = false; renderHome(); }');
+  });
+
+  it('offers rearranging only when the list on screen is the whole arrangement', () => {
+    // Under a sort the arrangement would be overwritten on the next read, and
+    // under a filter the hidden projects hold positions the visible list cannot
+    // speak for, so saving one would interleave them arbitrarily.
+    const script = extractScript();
+    expect(script).toContain("return projectSort === 'manual' && !filterText;");
+    expect(script).toContain('if (!canRearrange()) return;');
+  });
+
   it('has balanced script and style tags', () => {
     const count = (needle: string): number => APP_HTML.split(needle).length - 1;
     expect(count('<script>')).toBe(count('</script>'));
