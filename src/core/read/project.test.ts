@@ -229,33 +229,48 @@ describe('readProject on specdeck itself', () => {
   it('reads its own OpenSpec state', async () => {
     // The dogfooding assertion. If specdeck cannot read the repository it lives
     // in, nothing else it reports can be trusted.
+    //
+    // Nothing below names a particular change. An earlier version looked up
+    // add-specdeck-mvp, which was right until the day it was archived, and
+    // before that pinned its lane, which was right until the last task was
+    // ticked. Both were facts about one afternoon rather than invariants. What
+    // is asserted here is what has to keep holding as the repository moves on.
     const result = await readProject(new NodeFileSource(), repoRoot);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const change = result.snapshot.changes.find((c) => c.name === 'add-specdeck-mvp');
-    expect(change).toBeDefined();
-    expect(change?.metadata.schema).toBe('spec-driven');
-    expect(change?.artifacts.every((a) => a.status === 'done')).toBe(true);
-    expect(change?.tasks.total).toBeGreaterThan(50);
-    expect(change?.tasks.completed).toBeGreaterThan(0);
+    const { changes, capabilities } = result.snapshot;
+    expect(changes.length).toBeGreaterThan(0);
 
-    // The lane is asserted against the task counts rather than pinned to a
-    // value. An earlier version of this test hardcoded 'in-progress', which was
-    // true the afternoon it was written and broke the moment the last task was
-    // ticked. Deriving the expectation the same way the product does is the
-    // actual invariant worth protecting, and it never goes stale.
-    const { completed, total } = change?.tasks ?? { completed: 0, total: 0 };
-    const expectedLane = completed === 0 ? 'ready' : completed >= total ? 'done' : 'in-progress';
-    expect(change?.lane).toBe(expectedLane);
-    expect(change?.capabilities).toContain('git-sync');
-    expect(change?.deltaSpecs).toHaveLength(9);
+    // Archiving is what turns a change's delta specs into specs, so both sides
+    // of it have to be readable: the archived change, and what it produced.
+    expect(changes.some((change) => change.lane === 'archived')).toBe(true);
+    expect(capabilities.length).toBeGreaterThan(0);
+    for (const capability of capabilities) {
+      expect(capability.requirements.length, capability.id).toBeGreaterThan(0);
+      expect(
+        capability.issues.filter((issue) => issue.severity === 'error'),
+        capability.id,
+      ).toEqual([]);
+    }
 
-    // Every delta spec should parse cleanly. A failure here means the artifacts
-    // written earlier in this project do not match what OpenSpec expects.
-    const errors = change?.deltaSpecs.flatMap((d) =>
-      d.issues.filter((i) => i.severity === 'error'),
-    );
-    expect(errors).toEqual([]);
+    for (const change of changes) {
+      expect(change.metadata.schema, change.name).toBe('spec-driven');
+
+      // Every delta spec should parse cleanly. A failure here means artifacts
+      // written in this project no longer match what OpenSpec expects.
+      const errors = change.deltaSpecs.flatMap((delta) =>
+        delta.issues.filter((issue) => issue.severity === 'error'),
+      );
+      expect(errors, change.name).toEqual([]);
+
+      // The lane is derived the way the product derives it rather than pinned,
+      // so ticking a task cannot turn this red.
+      const { completed, total } = change.tasks;
+      if (change.lane !== 'archived' && total > 0) {
+        const expected = completed === 0 ? 'ready' : completed >= total ? 'done' : 'in-progress';
+        expect(change.lane, change.name).toBe(expected);
+      }
+    }
   });
 });
