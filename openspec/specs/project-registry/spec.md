@@ -1,7 +1,9 @@
 # project-registry Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Remembering which projects have been opened, and how the person wants them presented, entirely outside the projects themselves.
+
 ## Requirements
 ### Requirement: Projects are registered outside the projects themselves
 The system SHALL store the project registry and all user settings in specdeck's own

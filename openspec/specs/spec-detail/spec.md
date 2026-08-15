@@ -1,7 +1,9 @@
 # spec-detail Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Showing a change or a capability in full: its requirements, its scenarios, what each delta operation does, and what is wrong with any of it.
+
 ## Requirements
 ### Requirement: Every capability can be inspected in detail
 The system SHALL present each capability in the main specs with its purpose, its

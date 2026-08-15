@@ -1,7 +1,9 @@
 # git-sync Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Reporting what is uncommitted, what has not been pushed, and what a teammate pushed that is not in this checkout, without ever letting an unavailable comparison read as being in sync.
+
 ## Requirements
 ### Requirement: Sync state is computed before it is displayed
 The system SHALL run capability guards before comparing against a remote, and SHALL

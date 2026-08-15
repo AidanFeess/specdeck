@@ -187,17 +187,17 @@ npm run verify
 `npm run verify` runs formatting, linting, type checking, and tests, which is exactly what
 CI runs, on Linux, macOS, and Windows against Node 20.19 and Node 24.
 
-specdeck is built with OpenSpec, tracking its own development. This is its own board,
-captured from this repository:
+specdeck is built with OpenSpec, tracking its own development. These are its own specs,
+read out of this repository by specdeck:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/self-board-dark.png">
-  <img alt="specdeck showing its own repository: one change ready to implement and two finished" src="docs/media/self-board-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/self-specs-dark.png">
+  <img alt="specdeck reading its own specifications, with each requirement and scenario in full and the change that produced it named" src="docs/media/self-specs-light.png">
 </picture>
 
-`openspec/changes/` holds what is planned and how far along it is, and the design document
-of any change records the decisions and the alternatives that were rejected. That is the
-fastest way into the codebase.
+`openspec/specs/` is what the software is meant to do and `openspec/changes/` is what is
+being changed about it. The design document of any change records the decisions and the
+alternatives that were rejected, which is the fastest way into the codebase.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch model and how a release is cut.
 

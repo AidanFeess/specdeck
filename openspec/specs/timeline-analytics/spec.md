@@ -1,7 +1,9 @@
 # timeline-analytics Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Reconstructing when work on a change actually happened from git history, so the dates survive a fresh clone, and saying so when they cannot be.
+
 ## Requirements
 ### Requirement: Change history is derived from git rather than file timestamps
 The system SHALL derive a change's first worked and last worked times from git history

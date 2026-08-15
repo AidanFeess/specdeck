@@ -1,7 +1,9 @@
 # board-view Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Presenting active changes in lanes derived from their files, and offering the next real action on each rather than a drag target that the next read would undo.
+
 ## Requirements
 ### Requirement: Changes are presented in lanes derived from their files
 The system SHALL present active changes in lanes ordered by workflow progression, and
