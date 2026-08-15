@@ -1,7 +1,9 @@
 # live-updates Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Keeping the interface in step with the files while an agent writes them, without showing a change in a state it passed through on the way.
+
 ## Requirements
 ### Requirement: Local state updates without user action
 The system SHALL watch the local filesystem and SHALL push updated state to the browser

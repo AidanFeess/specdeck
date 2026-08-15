@@ -1,0 +1,51 @@
+## 1. Capture
+
+- [x] 1.1 Prepare a purpose-built repository with invented contents that exercises the sync states this project cannot show, including a change that exists only on the remote
+- [x] 1.2 Capture the board against specdeck's own repository, showing lanes, task progress, and sync chips
+- [x] 1.3 Capture the change detail panel on the tasks tab, showing grouped tasks and progress
+- [x] 1.4 Capture the projects view showing several projects with their lane breakdowns
+- [x] 1.5 Record a short clip of a card updating as a file changes on disk, since that behavior cannot be conveyed in prose
+- [x] 1.6 Capture in both light and dark, and keep whichever reads better at README width
+
+## 2. Review Before Committing
+
+- [x] 2.1 Inspect every captured image for anything that should not be published: tokens, private repository names, unrelated browser tabs, notifications, personal paths beyond the unavoidable
+- [x] 2.2 Crop to the application rather than the whole desktop
+- [x] 2.3 Compress the images and the recording, and record the resulting sizes
+- [x] 2.4 Confirm no third-party logo, font, or image appears in any asset
+
+## 3. README
+
+- [x] 3.1 Study several well regarded open source READMEs and record which conventions are actually common rather than assumed
+- [x] 3.2 Rewrite the opening so a reader sees what it is, what it looks like, and how to run it before anything else
+- [x] 3.3 Place the screenshots and the recording where they support the claims next to them
+- [x] 3.4 Check every capability sentence against the software, and remove or mark anything not yet true
+- [x] 3.5 Remove any performance or compatibility claim that has not been measured or run
+- [x] 3.6 Confirm other tools are named descriptively only, with no logos and nothing implying endorsement
+- [x] 3.7 Keep the known limitations section honest and current
+
+## 4. Repository Presentation
+
+- [x] 4.1 Set the repository description to one accurate sentence
+- [x] 4.2 Set topics so the project is findable by subject
+- [x] 4.3 Confirm the license file and the manifest agree, and that the license is stated in the README
+
+## 5. Branch Model
+
+- [x] 5.1 Create a `dev` branch from `main` and make it the default branch
+- [x] 5.2 Protect `main`: require CI to pass, and confirm the rules do not block tag pushes
+- [x] 5.3 Confirm a solo maintainer can still merge and release without disabling protection
+- [x] 5.4 Exercise the release path end to end after protection is applied, rather than assuming it still works
+- [x] 5.5 Document the branch model and the release steps in the contributing guide
+
+What 5.4 covered: `dev` was fast forwarded onto protected `main` and pushed, which is
+the step protection could refuse, and a throwaway tag was pushed and deleted against the
+protected branch to confirm tags are not covered by the rules. Publishing itself was not
+run, because a release would put a version on npm that cannot be taken back, and
+publishing is done by hand here rather than on a schedule.
+
+## 6. Verification
+
+- [x] 6.1 Read the rendered README on GitHub at both desktop and mobile widths
+- [x] 6.2 Confirm every image loads from a fresh clone and from the GitHub page
+- [x] 6.3 Confirm the published package still contains only the built output, the README, and the license

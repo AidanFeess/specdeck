@@ -149,6 +149,38 @@ describe('client sources', () => {
     expect(script).toContain('function captureScroll');
     expect(script).toContain('function restoreScroll');
     expect(script.split('restoreScroll(scroll)').length - 1).toBeGreaterThanOrEqual(3);
+
+    // The board scrolls sideways, and losing that position is the same fault as
+    // losing a vertical one: scroll right to read a later lane, an agent writes
+    // a file, and you are back at the first lane.
+    expect(script).toContain('map.boardLeft = board.scrollLeft');
+    expect(script).toContain('board.scrollLeft = map.boardLeft');
+  });
+
+  it('does not rebuild the projects grid while a drag is in progress', () => {
+    // Files change constantly while an agent works, and every change rescans.
+    // Rebuilding the grid mid drag replaces the node under the pointer, which
+    // cancels the drag. This checks the guard is present and that the deferred
+    // rebuild is actually run afterwards rather than dropped.
+    //
+    // Read from the source rather than the served script: the bundle is
+    // minified, so matching identifiers in it would only test the minifier.
+    //
+    // Matched on the parts rather than one exact line: the client is formatted
+    // now that it lives in its own files, so pinning the whitespace would fail
+    // the next time prettier wraps it differently.
+    const script = clientSource('app.js').replace(/\s+/g, ' ');
+    expect(script).toContain('if (draggingProject !== null) { dragPending = true; return; }');
+    expect(script).toContain('if (dragPending) { dragPending = false; renderHome(); }');
+  });
+
+  it('offers rearranging only when the list on screen is the whole arrangement', () => {
+    // Under a sort the arrangement would be overwritten on the next read, and
+    // under a filter the hidden projects hold positions the visible list cannot
+    // speak for, so saving one would interleave them arbitrarily.
+    const script = clientSource('app.js');
+    expect(script).toContain("return projectSort === 'manual' && !filterText;");
+    expect(script).toContain('if (!canRearrange()) return;');
   });
 
   it('boots from the entry point rather than at import time', () => {

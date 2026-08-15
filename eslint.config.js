@@ -5,7 +5,11 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'src/client/generated/**'],
+    // `.claude/` holds tool-generated files and, when an agent is working, a git
+    // worktree containing a whole second copy of this repository. Linting that
+    // copy reports errors against files that are not this checkout's source.
+    // `src/client/generated/` is the built client document, which is minified.
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.claude/**', 'src/client/generated/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -90,7 +94,18 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       parserOptions: { projectService: false, project: null },
-      globals: { console: 'readonly', process: 'readonly' },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        fetch: 'readonly',
+        WebSocket: 'readonly',
+        URL: 'readonly',
+      },
     },
     rules: {
       'no-console': 'off',

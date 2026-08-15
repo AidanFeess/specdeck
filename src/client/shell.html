@@ -11,7 +11,8 @@
   <body>
     <header>
       <h1>
-        specdeck <small id="ver" class="muted" style="font-weight: 450; font-size: 11px"></small>
+        <button id="brand">specdeck</button>
+        <small id="ver" class="muted" style="font-weight: 450; font-size: 11px"></small>
         <em id="pname"></em>
       </h1>
       <span class="chip" id="scan">scanning</span>
@@ -23,6 +24,7 @@
         <button id="viewBoard" class="on">Board</button>
         <button id="viewList">List</button>
         <button id="viewSpecs">Specs</button>
+        <button id="viewSettings">Settings</button>
       </span>
       <input id="filter" placeholder="Filter" />
       <button class="icon" id="themeBtn" title="Theme"></button>
@@ -34,6 +36,7 @@
     <div class="specs" id="specs" hidden></div>
     <div class="setup" id="setup" hidden></div>
     <div class="home" id="home" hidden></div>
+    <div class="home" id="settings" hidden></div>
     <div id="editor"></div>
     <div id="panel"></div>
     <div id="modal"></div>

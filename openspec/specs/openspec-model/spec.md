@@ -1,7 +1,9 @@
 # openspec-model Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Reading an OpenSpec project into the model everything else works from: changes, their artifacts, their tasks, and the schema that says which artifacts a change is meant to have.
+
 ## Requirements
 ### Requirement: Lane state is derived, never stored
 The system SHALL derive every change's lane from the files on disk, and SHALL NOT

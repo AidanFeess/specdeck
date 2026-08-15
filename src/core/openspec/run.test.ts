@@ -62,6 +62,7 @@ describe('only the runner spawns OpenSpec', () => {
       'core/openspec/run.ts',
       'server/browse.ts',
       'server/editor.ts',
+      'server/editors.ts',
       'server/handoff.ts',
     ]);
   });

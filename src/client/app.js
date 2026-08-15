@@ -100,13 +100,44 @@ function el(tag, cls, html) {
   if (html != null) n.innerHTML = html;
   return n;
 }
+/* Units change as the number grows, because "135h ago" is arithmetic the reader
+   should not have to do. Past a month the exact figure stops being useful and
+   the date itself is what someone wants. */
 function ago(iso) {
   if (!iso) return 'never';
-  var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  var when = new Date(iso).getTime();
+  if (isNaN(when)) return 'unknown';
+  var s = Math.max(0, Math.round((Date.now() - when) / 1000));
   if (s < 60) return s + 's ago';
   if (s < 3600) return Math.round(s / 60) + 'm ago';
-  return Math.round(s / 3600) + 'h ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  if (s < 2592000) return Math.round(s / 86400) + 'd ago';
+  return 'on ' + new Date(iso).toISOString().slice(0, 10);
 }
+/* Scenario bodies are markdown bullets with a bold keyword. Printing them raw
+   shows the reader the syntax instead of the sentence, so the keyword is set as
+   a label and the asterisks go away. Anything that does not match the shape is
+   shown as written rather than mangled. */
+function scenarioBody(text) {
+  var wrap = el('div', 'sbody');
+  String(text == null ? '' : text)
+    .split(/\r?\n/)
+    .forEach(function (raw) {
+      var line = raw.trim();
+      if (!line) return;
+      var row = el('div', 'sline');
+      var parts = /^[-*]\s*\*\*([^*]+)\*\*\s*(.*)$/.exec(line);
+      if (parts) {
+        row.appendChild(el('b', 'skw', esc(parts[1])));
+        row.appendChild(document.createTextNode(parts[2]));
+      } else {
+        row.appendChild(document.createTextNode(line.replace(/^[-*]\s*/, '')));
+      }
+      wrap.appendChild(row);
+    });
+  return wrap;
+}
+
 function issuesOf(change) {
   var all = (change.issues || []).slice();
   (change.deltaSpecs || []).forEach(function (d) {
@@ -141,12 +172,16 @@ function setGroupOpen(changeName, index, open) {
    across rebuilds rather than by element identity. */
 function captureScroll() {
   var map = {};
-  ['specs', 'list', 'home', 'setup'].forEach(function (id) {
+  ['specs', 'list', 'home', 'setup', 'settings'].forEach(function (id) {
     var e = document.getElementById(id);
     if (e) map[id] = e.scrollTop;
   });
-  var body = document.querySelector('.abody');
-  if (body) map.abody = body.scrollTop;
+  // The board scrolls sideways. Losing that position on a rescan throws the
+  // reader back to the first lane, which is the same fault as losing a vertical
+  // position and happens just as often, since every file an agent writes
+  // rebuilds the board.
+  var board = document.getElementById('board');
+  if (board) map.boardLeft = board.scrollLeft;
   // Lanes are keyed by their name, not their index, so adding or removing a
   // lane cannot shift positions onto the wrong column.
   [].slice.call(document.querySelectorAll('.lane')).forEach(function (lane) {
@@ -159,10 +194,12 @@ function captureScroll() {
 
 function restoreScroll(map) {
   if (!map) return;
-  ['specs', 'list', 'home', 'setup'].forEach(function (id) {
+  ['specs', 'list', 'home', 'setup', 'settings'].forEach(function (id) {
     var e = document.getElementById(id);
     if (e && map[id]) e.scrollTop = map[id];
   });
+  var board = document.getElementById('board');
+  if (board && map.boardLeft) board.scrollLeft = map.boardLeft;
   [].slice.call(document.querySelectorAll('.lane')).forEach(function (lane) {
     var h = lane.querySelector('h2');
     var cards = lane.querySelector('.cards');
@@ -177,8 +214,22 @@ function clearProjectActions() {
   if (bar) bar.innerHTML = '';
 }
 
+/* Switching views clears the filter. Carrying one across a switch is how a
+   user ends up staring at an empty board wondering what broke. */
+function switchView(next) {
+  view = next;
+  filterText = '';
+  var box = document.getElementById('filter');
+  if (box) box.value = '';
+  render();
+}
+
+function goHome() {
+  switchView('home');
+}
+
 function hideAllViews() {
-  ['board', 'list', 'specs', 'setup', 'home'].forEach(function (id) {
+  ['board', 'list', 'specs', 'setup', 'home', 'settings'].forEach(function (id) {
     document.getElementById(id).hidden = true;
   });
   document.getElementById('syncbar').hidden = true;
@@ -191,9 +242,22 @@ function render() {
   document.getElementById('banners').innerHTML = '';
 
   document.getElementById('viewHome').className = view === 'home' ? 'on' : '';
+  document.getElementById('viewSettings').className = view === 'settings' ? 'on' : '';
   document.getElementById('viewBoard').className = view === 'board' ? 'on' : '';
   document.getElementById('viewList').className = view === 'list' ? 'on' : '';
   document.getElementById('viewSpecs').className = view === 'specs' ? 'on' : '';
+
+  if (view === 'settings') {
+    hideAllViews();
+    clearProjectActions();
+    document.getElementById('settings').hidden = false;
+    document.getElementById('pname').textContent = '';
+    document.getElementById('counts').hidden = true;
+    renderSettings();
+    restoreScroll(scroll);
+    tick();
+    return;
+  }
 
   // The list spans every registered root, so it does not depend on the open
   // project being readable and is handled before that check.
@@ -214,7 +278,7 @@ function render() {
     clearProjectActions();
     document.getElementById('home').hidden = false;
     document.getElementById('pname').textContent = '';
-    document.getElementById('counts').textContent = '';
+    document.getElementById('counts').hidden = true;
     renderHome();
     restoreScroll(scroll);
     tick();
@@ -672,23 +736,6 @@ function loadTaskHistory(change) {
     });
 }
 
-function openFile(path) {
-  fetch('/api/editor', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path: path }),
-  })
-    .then(function (r) {
-      return r.json();
-    })
-    .then(function (res) {
-      toast(res.message || (res.ok ? 'Opened.' : 'Could not open that file.'), !res.ok);
-    })
-    .catch(function () {
-      toast('Could not reach specdeck.', true);
-    });
-}
-
 /* Archiving is the only destructive thing specdeck can do, and OpenSpec has no
    unarchive. So everything the interactive CLI would have asked is put in front
    of the user here instead, before anything runs. */
@@ -834,6 +881,356 @@ function showCommandFailure(title, res) {
   host.appendChild(back);
 }
 
+/* The editor picker.
+
+   specdeck asks rather than guessing, because guessing is what produced the
+   original fault: on a machine with no file association for markdown, the file
+   was handed to the operating system, nothing appeared, and nothing was
+   reported. */
+function openFile(path) {
+  fetch('/api/editor', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: path }),
+  })
+    .then(function (r) {
+      return r.json().then(function (b) {
+        return { status: r.status, body: b };
+      });
+    })
+    .then(function (res) {
+      if (res.body.needsChoice) {
+        askForEditor(path, null);
+        return;
+      }
+      if (res.status === 200) {
+        toast(res.body.message);
+        return;
+      }
+      // A remembered application that no longer launches must not fail quietly.
+      askForEditor(path, res.body);
+    })
+    .catch(function () {
+      toast('Could not reach specdeck.', true);
+    });
+}
+
+function baseNameOf(path) {
+  return path.split(String.fromCharCode(92)).join('/').split('/').pop();
+}
+
+function askForEditor(path, failure) {
+  fetch('/api/editors')
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (info) {
+      var host = document.getElementById('modal');
+      var back = el('div', 'modal');
+      var sheet = el('div', 'sheet');
+
+      sheet.appendChild(el('h3', null, 'Open with'));
+      if (failure && failure.message) {
+        sheet.appendChild(el('div', 'flag err', esc(failure.message)));
+        if (failure.attempted) sheet.appendChild(el('pre', null, esc(failure.attempted)));
+      }
+      sheet.appendChild(el('div', 'muted', esc(baseNameOf(path))));
+
+      var chosen = { command: null, system: false, label: null };
+      var pills = el('div', 'pills');
+
+      function select(button, next) {
+        chosen = next;
+        [].slice.call(pills.querySelectorAll('button')).forEach(function (x) {
+          x.className = '';
+        });
+        if (button) button.className = 'on';
+      }
+
+      (info.editors || []).forEach(function (e) {
+        var b = el('button', null, esc(e.label));
+        b.title = e.command;
+        b.onclick = function () {
+          select(b, { command: e.command, system: false, label: e.label });
+        };
+        pills.appendChild(b);
+      });
+
+      var sys = el('button', null, 'System default');
+      sys.title = 'Hand the file to your operating system';
+      sys.onclick = function () {
+        select(sys, { command: null, system: true, label: 'System default' });
+      };
+      pills.appendChild(sys);
+      sheet.appendChild(pills);
+
+      if (!(info.editors || []).length) {
+        sheet.appendChild(
+          el(
+            'div',
+            'muted',
+            'specdeck found no known editor here. Type a command or a full path below.',
+          ),
+        );
+      }
+
+      var custom = document.createElement('input');
+      custom.placeholder = 'or a command or path, for example code';
+      custom.style.width = '100%';
+      custom.style.marginTop = '10px';
+      custom.oninput = function () {
+        var value = custom.value.trim();
+        if (value) select(null, { command: value, system: false, label: value });
+      };
+      sheet.appendChild(custom);
+
+      var rememberWrap = el('label', 'tool');
+      rememberWrap.style.marginTop = '10px';
+      var remember = document.createElement('input');
+      remember.type = 'checkbox';
+      rememberWrap.appendChild(remember);
+      rememberWrap.appendChild(el('span', null, 'Remember this choice'));
+      rememberWrap.appendChild(el('span', 'muted', 'changeable in Settings'));
+      sheet.appendChild(rememberWrap);
+
+      var actions = el('div', 'actions');
+      var cancel = el('button', null, 'Cancel');
+      cancel.onclick = function () {
+        host.innerHTML = '';
+      };
+      var go = el('button', 'act', 'Open');
+      go.style.width = 'auto';
+      go.style.marginTop = '0';
+      go.onclick = function () {
+        if (!chosen.command && !chosen.system) {
+          toast('Pick an application first.', true);
+          return;
+        }
+        var payload = { path: path, remember: remember.checked };
+        if (chosen.system) payload.system = true;
+        else payload.command = chosen.command;
+        if (chosen.label) payload.label = chosen.label;
+
+        fetch('/api/editor', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+          .then(function (r) {
+            return r.json().then(function (b) {
+              return { status: r.status, body: b };
+            });
+          })
+          .then(function (res) {
+            if (res.status === 200) {
+              host.innerHTML = '';
+              toast(res.body.message + (remember.checked ? ' Remembered.' : ''));
+              if (remember.checked) load();
+            } else {
+              // Stay open so another application can be picked immediately.
+              askForEditor(path, res.body);
+            }
+          })
+          .catch(function () {
+            toast('Could not reach specdeck.', true);
+          });
+      };
+      actions.appendChild(cancel);
+      actions.appendChild(go);
+      sheet.appendChild(actions);
+
+      back.appendChild(sheet);
+      back.onclick = function (e) {
+        if (e.target === back) host.innerHTML = '';
+      };
+      host.innerHTML = '';
+      host.appendChild(back);
+    });
+}
+
+/* Settings. A preference that can only be changed by triggering the action it
+   governs is one the user cannot undo. */
+function renderSettings() {
+  var host = document.getElementById('settings');
+  host.innerHTML = '';
+  var inner = el('div', 'inner');
+  inner.appendChild(el('h2', null, 'Settings'));
+  inner.appendChild(
+    el('div', 'sub', 'These apply to specdeck itself. Nothing here is written into any project.'),
+  );
+
+  var remembered = state.config && state.config.defaults && state.config.defaults.editor;
+
+  var editorRow = el('div', 'setrow');
+  editorRow.appendChild(el('div', 'k', 'Open documents with'));
+  var ev = el('div', 'v');
+  ev.appendChild(
+    el(
+      'div',
+      null,
+      remembered
+        ? esc(
+            remembered.label ||
+              (remembered.kind === 'system' ? 'System default' : remembered.command),
+          )
+        : 'Ask every time',
+    ),
+  );
+  ev.appendChild(
+    el(
+      'div',
+      'hint',
+      remembered
+        ? 'Used for every project. Clear it to be asked again.'
+        : 'specdeck asks which application to use, and can remember your answer.',
+    ),
+  );
+
+  var evActions = el('div', 'pills');
+  var change = el('button', null, remembered ? 'Change' : 'Choose');
+  change.onclick = function () {
+    chooseEditorPreference();
+  };
+  evActions.appendChild(change);
+  if (remembered) {
+    var clear = el('button', null, 'Clear');
+    clear.onclick = function () {
+      fetch('/api/settings/editor', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ clear: true }),
+      })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (s) {
+          state = s;
+          toast('Cleared. specdeck will ask again.');
+          render();
+        });
+    };
+    evActions.appendChild(clear);
+  }
+  ev.appendChild(evActions);
+  editorRow.appendChild(ev);
+  inner.appendChild(editorRow);
+
+  var handoffRow = el('div', 'setrow');
+  handoffRow.appendChild(el('div', 'k', 'Handoff method'));
+  var hv = el('div', 'v');
+  var current =
+    (state.config && state.config.defaults && state.config.defaults.handoffMethod) || 'auto';
+  var hp = el('div', 'pills');
+  [
+    ['auto', 'Automatic'],
+    ['attach', 'Send to a running session'],
+    ['terminal', 'Open in a new terminal'],
+    ['clipboard', 'Copy the prompt'],
+  ].forEach(function (pair) {
+    var b = el('button', current === pair[0] ? 'on' : null, esc(pair[1]));
+    b.onclick = function () {
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handoffMethod: pair[0], scope: 'global' }),
+      })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (s) {
+          state = s;
+          render();
+        });
+    };
+    hp.appendChild(b);
+  });
+  hv.appendChild(hp);
+  hv.appendChild(
+    el(
+      'div',
+      'hint',
+      'Anything specdeck cannot do for your tool falls back to copying, and says so.',
+    ),
+  );
+  handoffRow.appendChild(hv);
+  inner.appendChild(handoffRow);
+
+  host.appendChild(inner);
+}
+
+/* Choosing a preference from settings, with no document to open yet. */
+function chooseEditorPreference() {
+  fetch('/api/editors')
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (info) {
+      var host = document.getElementById('modal');
+      var back = el('div', 'modal');
+      var sheet = el('div', 'sheet');
+      sheet.appendChild(el('h3', null, 'Open documents with'));
+      sheet.appendChild(el('div', 'muted', 'Applies to every project. You can clear it later.'));
+
+      function choose(payload, label) {
+        fetch('/api/settings/editor', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (s) {
+            state = s;
+            host.innerHTML = '';
+            toast('Documents will open in ' + label + '.');
+            render();
+          });
+      }
+
+      var pills = el('div', 'pills');
+      (info.editors || []).forEach(function (e) {
+        var b = el('button', null, esc(e.label));
+        b.title = e.command;
+        b.onclick = function () {
+          choose({ command: e.command, label: e.label }, e.label);
+        };
+        pills.appendChild(b);
+      });
+      var sys = el('button', null, 'System default');
+      sys.onclick = function () {
+        choose({ system: true }, 'your system default');
+      };
+      pills.appendChild(sys);
+      sheet.appendChild(pills);
+
+      var custom = document.createElement('input');
+      custom.placeholder = 'or a command or path';
+      custom.style.width = '100%';
+      custom.style.marginTop = '10px';
+      custom.onkeydown = function (e) {
+        var value = custom.value.trim();
+        if (e.key === 'Enter' && value) choose({ command: value, label: value }, value);
+      };
+      sheet.appendChild(custom);
+
+      var actions = el('div', 'actions');
+      var close = el('button', null, 'Cancel');
+      close.onclick = function () {
+        host.innerHTML = '';
+      };
+      actions.appendChild(close);
+      sheet.appendChild(actions);
+
+      back.appendChild(sheet);
+      back.onclick = function (e) {
+        if (e.target === back) host.innerHTML = '';
+      };
+      host.innerHTML = '';
+      host.appendChild(back);
+    });
+}
+
 /* The projects home. Overviews cost a full project read each, so they are
    fetched when this screen is opened rather than on every board render. */
 var overviews = null;
@@ -847,6 +1244,26 @@ var listPrefs = loadPreferences();
 var pendingOpen = null;
 /** Approval per change in the open project. Empty until fetched. */
 var approvals = {};
+
+var placements = [];
+var projectSort = 'manual';
+var draggingProject = null;
+var dragPending = false;
+/* A rearrangement rebuilds the grid, which throws away the focused card. The
+   card that moved is refocused afterwards so a second key press keeps working. */
+var pendingFocus = null;
+
+try {
+  var savedSort = localStorage.getItem('specdeck.projectSort');
+  if (savedSort) projectSort = savedSort;
+} catch {}
+
+function saveSort(value) {
+  projectSort = value;
+  try {
+    localStorage.setItem('specdeck.projectSort', value);
+  } catch {}
+}
 
 function openProject(path) {
   fetch('/api/open', {
@@ -867,12 +1284,13 @@ function openProject(path) {
 }
 
 function loadOverviews() {
-  fetch('/api/overview')
+  fetch('/api/overview?sort=' + encodeURIComponent(projectSort))
     .then(function (r) {
       return r.json();
     })
     .then(function (res) {
       overviews = res.overviews;
+      placements = res.placements || [];
       if (view === 'home') renderHome();
     });
 }
@@ -967,7 +1385,204 @@ function promptForPath(reason) {
   input.focus();
 }
 
+var SORTS = [
+  { id: 'manual', label: 'Manual' },
+  { id: 'name', label: 'Name' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'tasks', label: 'Tasks' },
+];
+
+function isStarred(path) {
+  for (var i = 0; i < placements.length; i++) {
+    if (placements[i].path === path) return placements[i].starred === true;
+  }
+  return false;
+}
+
+/* Starred projects are a block above the rest, so a move across that boundary
+   cannot be honoured. Refusing it out loud beats a card that springs back. */
+function sameGroup(a, b) {
+  return isStarred(a) === isStarred(b);
+}
+
+function visibleProjects() {
+  var needle = filterText.toLowerCase();
+  if (!needle) return overviews;
+  return overviews.filter(function (o) {
+    return (
+      o.name.toLowerCase().indexOf(needle) !== -1 || o.path.toLowerCase().indexOf(needle) !== -1
+    );
+  });
+}
+
+/* Rearranging is offered only when what you see is what you are arranging.
+   Under a sort the arrangement would be overwritten on the next read, and under
+   a filter the hidden projects have positions this list cannot speak for. */
+function canRearrange() {
+  return projectSort === 'manual' && !filterText;
+}
+
+function indexOfPath(list, path) {
+  for (var i = 0; i < list.length; i++) if (list[i].path === path) return i;
+  return -1;
+}
+
+function focusCard(path) {
+  var nodes = document.getElementById('home').getElementsByClassName('pcard');
+  for (var i = 0; i < nodes.length; i++) {
+    if (nodes[i].getAttribute('data-path') === path) {
+      nodes[i].focus();
+      return;
+    }
+  }
+}
+
+function clearDropHints() {
+  var nodes = document.getElementById('home').getElementsByClassName('pcard');
+  for (var i = 0; i < nodes.length; i++) {
+    nodes[i].classList.remove('dropbefore');
+    nodes[i].classList.remove('dropafter');
+    nodes[i].classList.remove('nodrop');
+  }
+}
+
+/* A control inside a card must not also trigger the card. The click is stopped
+   where it is handled, and the key press here, because the card itself acts on
+   Enter and Space. */
+function isolate(button) {
+  button.onkeydown = function (e) {
+    if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+  };
+  return button;
+}
+
+function sortControls() {
+  var row = el('div', 'controls');
+  row.appendChild(el('span', 'lbl', 'Sort'));
+
+  var seg = el('span', 'seg');
+  SORTS.forEach(function (s) {
+    var b = el('button', projectSort === s.id ? 'on' : null, esc(s.label));
+    b.onclick = function () {
+      if (projectSort === s.id) return;
+      saveSort(s.id);
+      renderHome();
+      loadOverviews();
+    };
+    seg.appendChild(b);
+  });
+  row.appendChild(seg);
+
+  if (projectSort !== 'manual') {
+    row.appendChild(el('span', 'lbl', 'Switch to Manual to rearrange.'));
+  } else if (filterText) {
+    row.appendChild(el('span', 'lbl', 'Clear the filter to rearrange.'));
+  }
+  return row;
+}
+
+function toggleStar(o, starred) {
+  pendingFocus = o.path;
+  fetch('/api/projects/star', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: o.path, starred: starred }),
+  })
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (res) {
+      if (res && res.error) {
+        toast(res.error, true);
+        return;
+      }
+      // The server owns the ordering rule, so the list is read back rather than
+      // rearranged here against a second copy of that rule.
+      loadOverviews();
+    })
+    .catch(function () {
+      toast('Could not save that.', true);
+    });
+}
+
+/* The new arrangement is shown at once and saved behind it. The client already
+   knows the resulting order, so reading every project again after a move would
+   cost a full scan each for nothing new. */
+function applyOrder(next, focusPath) {
+  overviews = next;
+  var paths = next.map(function (o) {
+    return o.path;
+  });
+
+  placements = placements.slice();
+  paths.forEach(function (path, index) {
+    var found = false;
+    for (var i = 0; i < placements.length; i++) {
+      if (placements[i].path === path) {
+        placements[i] = { path: path, starred: placements[i].starred, order: index };
+        found = true;
+      }
+    }
+    if (!found) placements.push({ path: path, order: index });
+  });
+
+  pendingFocus = focusPath || null;
+  renderHome();
+
+  fetch('/api/projects/order', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ paths: paths }),
+  })
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (res) {
+      if (res && res.error) toast(res.error, true);
+    })
+    .catch(function () {
+      toast('Could not save the new order.', true);
+    });
+}
+
+function moveProject(path, delta) {
+  if (!canRearrange()) return;
+  var list = visibleProjects();
+  var from = indexOfPath(list, path);
+  var to = from + delta;
+  if (from < 0 || to < 0 || to >= list.length) return;
+  if (!sameGroup(list[from].path, list[to].path)) {
+    toast('Starred projects always sit above the rest.');
+    return;
+  }
+  var next = list.slice();
+  next.splice(to, 0, next.splice(from, 1)[0]);
+  applyOrder(next, path);
+}
+
+function dropProject(sourcePath, targetPath, after) {
+  if (!canRearrange()) return;
+  var list = visibleProjects();
+  var from = indexOfPath(list, sourcePath);
+  if (from < 0 || indexOfPath(list, targetPath) < 0) return;
+  if (!sameGroup(sourcePath, targetPath)) {
+    toast('Starred projects always sit above the rest.');
+    return;
+  }
+  var next = list.slice();
+  var moved = next.splice(from, 1)[0];
+  next.splice(indexOfPath(next, targetPath) + (after ? 1 : 0), 0, moved);
+  applyOrder(next, sourcePath);
+}
+
 function renderHome() {
+  /* A rescan arriving mid drag would rebuild the grid out from under the
+     pointer and cancel the drag. The rebuild waits for the drag to end. */
+  if (draggingProject !== null) {
+    dragPending = true;
+    return;
+  }
+
   var host = document.getElementById('home');
   host.innerHTML = '';
 
@@ -1011,18 +1626,61 @@ function renderHome() {
     return;
   }
 
+  inner.appendChild(sortControls());
+
+  var shown = visibleProjects();
+  if (!shown.length) {
+    inner.appendChild(
+      el(
+        'div',
+        'empty',
+        'No project matches ' + esc(filterText) + '. Clear the filter to see them all.',
+      ),
+    );
+    host.appendChild(inner);
+    return;
+  }
+
   var grid = el('div', 'grid');
-  overviews.forEach(function (o) {
-    grid.appendChild(projectCard(o));
+  shown.forEach(function (o, index) {
+    grid.appendChild(projectCard(o, index, shown));
   });
   inner.appendChild(grid);
   renderStores(inner);
   host.appendChild(inner);
+
+  if (pendingFocus) {
+    var target = pendingFocus;
+    pendingFocus = null;
+    focusCard(target);
+  }
 }
 
-function projectCard(o) {
-  var n = el('div', 'pcard' + (o.path === state.activeProject ? ' current' : ''));
-  n.appendChild(el('div', 'pname', esc(o.name)));
+function projectCard(o, index, shown) {
+  var starred = isStarred(o.path);
+  var arrange = canRearrange() && shown.length > 1;
+  var n = el(
+    'div',
+    'pcard' + (o.path === state.activeProject ? ' current' : '') + (arrange ? ' draggable' : ''),
+  );
+  n.setAttribute('data-path', o.path);
+
+  var head = el('div', 'ptop');
+  head.appendChild(el('div', 'pname', esc(o.name)));
+
+  var star = isolate(el('button', 'star' + (starred ? ' on' : ''), starred ? '\u2605' : '\u2606'));
+  star.title = starred
+    ? 'Starred. Click to let it sort with the rest.'
+    : 'Star this project to keep it on top.';
+  star.setAttribute('aria-pressed', starred ? 'true' : 'false');
+  star.setAttribute('aria-label', starred ? 'Unstar ' + o.name : 'Star ' + o.name);
+  star.onclick = function (e) {
+    e.stopPropagation();
+    toggleStar(o, !starred);
+  };
+  head.appendChild(star);
+  n.appendChild(head);
+
   n.appendChild(el('div', 'ppath', esc(o.path)));
 
   if (!o.ok) {
@@ -1068,7 +1726,34 @@ function projectCard(o) {
     if (foot.childNodes.length) n.appendChild(foot);
   }
 
-  var remove = el('button', 'remove', 'Remove');
+  var footer = el('div', 'pfoot');
+
+  if (arrange) {
+    var move = el('div', 'move');
+    var earlier = isolate(el('button', null, '\u2190'));
+    earlier.title = 'Move earlier. Alt and Left does the same.';
+    earlier.setAttribute('aria-label', 'Move ' + o.name + ' earlier');
+    earlier.disabled = index === 0 || !sameGroup(o.path, shown[index - 1].path);
+    earlier.onclick = function (e) {
+      e.stopPropagation();
+      moveProject(o.path, -1);
+    };
+
+    var later = isolate(el('button', null, '\u2192'));
+    later.title = 'Move later. Alt and Right does the same.';
+    later.setAttribute('aria-label', 'Move ' + o.name + ' later');
+    later.disabled = index === shown.length - 1 || !sameGroup(o.path, shown[index + 1].path);
+    later.onclick = function (e) {
+      e.stopPropagation();
+      moveProject(o.path, 1);
+    };
+
+    move.appendChild(earlier);
+    move.appendChild(later);
+    footer.appendChild(move);
+  }
+
+  var remove = isolate(el('button', 'remove', 'Remove'));
   remove.title = 'Forget this project. Nothing on disk is touched.';
   remove.onclick = function (e) {
     e.stopPropagation();
@@ -1088,7 +1773,6 @@ function projectCard(o) {
         renderHome();
       });
   };
-  var footer = el('div', 'pfoot');
   footer.appendChild(remove);
   n.appendChild(footer);
 
@@ -1098,11 +1782,82 @@ function projectCard(o) {
     openProject(o.path);
   };
   n.onkeydown = function (e) {
+    if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      moveProject(o.path, -1);
+      return;
+    }
+    if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      moveProject(o.path, 1);
+      return;
+    }
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       openProject(o.path);
     }
   };
+
+  if (arrange) {
+    n.draggable = true;
+    n.ondragstart = function (e) {
+      draggingProject = o.path;
+      dragPending = false;
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        // Firefox starts no drag at all unless the transfer carries something.
+        try {
+          e.dataTransfer.setData('text/plain', o.path);
+        } catch {}
+      }
+      n.classList.add('dragging');
+    };
+    n.ondragend = function () {
+      draggingProject = null;
+      n.classList.remove('dragging');
+      clearDropHints();
+      if (dragPending) {
+        dragPending = false;
+        renderHome();
+      }
+    };
+    n.ondragover = function (e) {
+      if (draggingProject === null || draggingProject === o.path) return;
+      e.preventDefault();
+      clearDropHints();
+
+      // A drop that will be refused says so while the pointer is still moving,
+      // rather than showing an insertion marker it has no intention of honouring.
+      if (!sameGroup(draggingProject, o.path)) {
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+        n.classList.add('nodrop');
+        return;
+      }
+
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      // Which half of the card the pointer is over decides which side of it the
+      // dragged project lands on, so the last position is reachable too.
+      var box = n.getBoundingClientRect();
+      n.classList.add(e.clientX - box.left > box.width / 2 ? 'dropafter' : 'dropbefore');
+    };
+    n.ondragleave = function () {
+      n.classList.remove('dropbefore');
+      n.classList.remove('dropafter');
+      n.classList.remove('nodrop');
+    };
+    n.ondrop = function (e) {
+      e.preventDefault();
+      // The board's own drop handler would otherwise explain that lanes cannot
+      // be reordered, which has nothing to do with this.
+      e.stopPropagation();
+      var source = draggingProject;
+      draggingProject = null;
+      clearDropHints();
+      if (!source || source === o.path) return;
+      var box = n.getBoundingClientRect();
+      dropProject(source, o.path, e.clientX - box.left > box.width / 2);
+    };
+  }
   return n;
 }
 
@@ -1498,7 +2253,7 @@ function renderSpecs(snap, needle) {
       r.scenarios.forEach(function (sc) {
         var w = el('div', 'scn');
         w.appendChild(el('div', 'sname', esc(sc.name)));
-        w.appendChild(el('pre', null, esc(sc.body)));
+        w.appendChild(scenarioBody(sc.body));
         req.appendChild(w);
       });
       box.appendChild(req);
@@ -1914,7 +2669,7 @@ function openPanel(c) {
           r.scenarios.forEach(function (sc) {
             var w = el('div', 'scn');
             w.appendChild(el('div', 'sname', esc(sc.name)));
-            w.appendChild(el('pre', null, esc(sc.body)));
+            w.appendChild(scenarioBody(sc.body));
             box.appendChild(w);
           });
           sd(box, r);
@@ -3079,21 +3834,23 @@ document.getElementById('filter').addEventListener('input', function (e) {
   render();
 });
 document.getElementById('themeBtn').onclick = cycleTheme;
+document.getElementById('brand').onclick = function () {
+  goHome();
+};
 document.getElementById('viewHome').onclick = function () {
-  view = 'home';
-  render();
+  goHome();
+};
+document.getElementById('viewSettings').onclick = function () {
+  switchView('settings');
 };
 document.getElementById('viewBoard').onclick = function () {
-  view = 'board';
-  render();
+  switchView('board');
 };
 document.getElementById('viewList').onclick = function () {
-  view = 'list';
-  render();
+  switchView('list');
 };
 document.getElementById('viewSpecs').onclick = function () {
-  view = 'specs';
-  render();
+  switchView('specs');
 };
 /*
  * Clicking outside the panel closes it.

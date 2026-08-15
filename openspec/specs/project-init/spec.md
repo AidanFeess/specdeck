@@ -1,7 +1,9 @@
 # project-init Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Setting up OpenSpec in a folder that does not have it yet, with the tools the project actually uses and the command shown next to the button that runs it.
+
 ## Requirements
 ### Requirement: Folders without OpenSpec can be initialized from the interface
 The system SHALL detect that a directory has no OpenSpec structure and SHALL offer to

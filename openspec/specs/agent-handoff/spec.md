@@ -1,7 +1,9 @@
 # agent-handoff Specification
 
 ## Purpose
-TBD - created by archiving change add-specdeck-mvp. Update Purpose after archive.
+
+Sending a change back to the AI tool that will work on it, using the command OpenSpec itself generated, and being honest about which method was used when the preferred one is unavailable.
+
 ## Requirements
 ### Requirement: Handoff payload is harness independent
 The system SHALL build one handoff payload that names the change and directs the agent
