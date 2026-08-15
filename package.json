@@ -58,7 +58,7 @@
     "dompurify": "^3.4.13",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.2",
-    "jsdom": "^30.0.1",
+    "jsdom": "^25.0.1",
     "marked": "^18.0.9",
     "prettier": "^3.4.2",
     "typescript": "^5.9.3",

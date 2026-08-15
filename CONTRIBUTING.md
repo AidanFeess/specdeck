@@ -38,7 +38,8 @@ Two things follow from that arrangement, and both are deliberate:
 - **The client is JavaScript, not TypeScript.** It is bundled rather than compiled, so it
   sits outside the type-checked project. `no-undef` is switched on for it instead, which
   is what catches a reference that was never imported. Its tests are `.test.js` and run
-  under jsdom.
+  under jsdom, pinned to a major whose bundled undici does not call a Node API that
+  the oldest supported Node lacks.
 - **Everything the client needs is a devDependency.** marked, DOMPurify, and CodeMirror
   are inlined at build time, so the published package ships the built document and
   someone running `npx specdeck` installs none of them.
