@@ -390,7 +390,7 @@ export const APP_HTML = `<!doctype html>
 </head>
 <body>
 <header>
-  <h1>specdeck <em id="pname"></em></h1>
+  <h1>specdeck <small id="ver" class="muted" style="font-weight:450;font-size:11px"></small> <em id="pname"></em></h1>
   <span class="chip" id="scan">scanning</span>
   <span class="chip" id="counts"></span>
   <span class="grow"></span>
@@ -546,6 +546,8 @@ function render() {
   var snap = res.snapshot;
   scannedAt = snap.scannedAt;
   document.getElementById('pname').textContent = snap.name;
+  var badge = document.getElementById('ver');
+  if (badge && state.version) badge.textContent = 'v' + state.version;
   document.getElementById('counts').textContent =
     snap.changes.length + ' changes \\u00b7 ' + snap.capabilities.length + ' capabilities';
 

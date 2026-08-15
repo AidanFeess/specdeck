@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { startServer } from '../server/server.js';
 import { checkBundledOpenSpec } from '../core/openspec/installed.js';
+import { specdeckVersion } from '../core/version.js';
 
 /**
  * `npx specdeck` entry point.
@@ -69,8 +70,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 
   if (args.version) {
     const compatibility = checkBundledOpenSpec();
+    // specdeck's own version first. `npx` caches per version and resolves
+    // latest, so "which one am I actually running" is a question users have to
+    // be able to answer.
     console.log(
-      `specdeck (OpenSpec ${compatibility.version ? formatted(compatibility) : 'unknown'})`,
+      `specdeck ${specdeckVersion()} (bundled OpenSpec ${
+        compatibility.version ? formatted(compatibility) : 'unknown'
+      })`,
     );
     return;
   }
@@ -89,7 +95,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   if (args.port !== undefined) options.port = args.port;
 
   const running = await startServer(options);
-  console.log(`specdeck is running at ${running.url}`);
+  console.log(`specdeck ${specdeckVersion()} is running at ${running.url}`);
   console.log(`Reading ${args.project}`);
   console.log('Press Ctrl+C to stop.');
 

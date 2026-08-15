@@ -5,6 +5,7 @@ import { localFileSource } from '../core/fs/node-source.js';
 import { readConfig, writeConfig, addProject, removeProject } from '../core/config/store.js';
 import { readProject } from '../core/read/project.js';
 import { checkBundledOpenSpec } from '../core/openspec/installed.js';
+import { specdeckVersion } from '../core/version.js';
 import { detectHarnesses } from '../core/openspec/harness.js';
 import { listInitTools, runInit, type InitTool } from '../core/openspec/init.js';
 import { toggleTask } from '../core/write/toggle-task.js';
@@ -151,6 +152,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     }
 
     return {
+      version: specdeckVersion(),
       config,
       activeProject,
       project,

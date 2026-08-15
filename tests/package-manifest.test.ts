@@ -15,6 +15,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 interface PackageManifest {
   name: string;
+  version: string;
   type: string;
   bin: Record<string, string>;
   files: string[];
@@ -70,5 +71,16 @@ describe('package manifest', () => {
     for (const gate of ['format:check', 'lint', 'typecheck', 'test']) {
       expect(verify).toContain(gate);
     }
+  });
+});
+
+describe('version reporting', () => {
+  it('reports the same version the manifest declares', async () => {
+    // `npx` resolves latest and caches per version, so a user can easily be
+    // running something other than what they expect. Before this, --version
+    // printed only OpenSpec's version, which made that unanswerable.
+    const { specdeckVersion } = await import('../src/core/version.js');
+    expect(specdeckVersion()).toBe(readManifest().version);
+    expect(specdeckVersion()).not.toBe('unknown');
   });
 });
