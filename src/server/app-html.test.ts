@@ -91,6 +91,12 @@ describe('served client document', () => {
     expect(script).toContain('function captureScroll');
     expect(script).toContain('function restoreScroll');
     expect(script.split('restoreScroll(scroll)').length - 1).toBeGreaterThanOrEqual(3);
+
+    // The board scrolls sideways, and losing that position is the same fault as
+    // losing a vertical one: scroll right to read a later lane, an agent writes
+    // a file, and you are back at the first lane.
+    expect(script).toContain('map.boardLeft = board.scrollLeft');
+    expect(script).toContain('board.scrollLeft = map.boardLeft');
   });
 
   it('does not rebuild the projects grid while a drag is in progress', () => {
