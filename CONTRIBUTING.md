@@ -66,6 +66,54 @@ only the handoff methods it can actually perform, and anything it does not imple
 falls through to copying the prompt, which always works. You should not need to touch
 the board, the parser, or the sync layer to add one.
 
+## Branches and releases
+
+`dev` is the default branch and where work lands. `main` is what gets released, and it is
+protected: CI has to pass before anything reaches it.
+
+```
+feature branch  ->  dev  ->  main  ->  tag  ->  npm
+```
+
+Work on a branch named after the OpenSpec change you are implementing, and open the pull
+request against `dev`.
+
+A release is cut by fast forwarding `main` to `dev` and pushing a tag:
+
+```bash
+git checkout main
+git merge --ff-only dev
+git push origin main
+npm version minor        # updates package.json and creates the tag
+git push --follow-tags
+```
+
+The tag push is what triggers publishing. The release workflow verifies the tag matches
+the manifest, publishes to npm with provenance through trusted publishing, and creates the
+GitHub release. Branch protection covers branches rather than tags, so the tag push is not
+blocked by it.
+
+There is no second reviewer on this project yet, so the protection rules do not require an
+approving review. Protection a solo maintainer has to switch off is protection that stays
+off.
+
+## Regenerating the screenshots
+
+The images in the README are generated rather than captured by hand, so an interface change
+does not quietly leave them wrong:
+
+```bash
+node scripts/capture/demo.mjs ../specdeck-demo
+node dist/cli/index.js ../specdeck-demo/orbit --port 7788 --no-open
+node scripts/capture/shots.mjs http://127.0.0.1:7788 docs/media
+node scripts/capture/live.mjs http://127.0.0.1:7788 ../specdeck-demo/orbit docs/media/live-update.gif
+```
+
+The demo projects are invented. Captures come from a headless browser rather than a
+desktop, so nothing outside the application can end up in an image. ffmpeg is used to
+compress them and to build the recording; without it the captures still work and are just
+larger.
+
 ## Pull requests
 
 - Keep the change focused. One concern per pull request.

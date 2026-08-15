@@ -242,6 +242,12 @@ export const APP_HTML = `<!doctype html>
   .scn { border-left: 2px solid var(--line); margin: 9px 0 0 2px; padding: 2px 0 2px 11px; }
   .scn .sname { font-size: 12.5px; font-weight: 550; }
   .scn pre { margin: 3px 0 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  .scn .sbody { margin-top: 3px; }
+  .scn .sline { font-size: 12.5px; color: var(--muted); }
+  .scn .sline .skw {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--faint);
+    margin-right: 5px;
+  }
 
   code { background: var(--lane); padding: 1px 5px; border-radius: 4px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
@@ -498,13 +504,42 @@ function el(tag, cls, html) {
   if (html != null) n.innerHTML = html;
   return n;
 }
+/* Units change as the number grows, because "135h ago" is arithmetic the reader
+   should not have to do. Past a month the exact figure stops being useful and
+   the date itself is what someone wants. */
 function ago(iso) {
   if (!iso) return 'never';
-  var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime())/1000));
+  var when = new Date(iso).getTime();
+  if (isNaN(when)) return 'unknown';
+  var s = Math.max(0, Math.round((Date.now() - when)/1000));
   if (s < 60) return s + 's ago';
   if (s < 3600) return Math.round(s/60) + 'm ago';
-  return Math.round(s/3600) + 'h ago';
+  if (s < 86400) return Math.round(s/3600) + 'h ago';
+  if (s < 2592000) return Math.round(s/86400) + 'd ago';
+  return 'on ' + new Date(iso).toISOString().slice(0, 10);
 }
+/* Scenario bodies are markdown bullets with a bold keyword. Printing them raw
+   shows the reader the syntax instead of the sentence, so the keyword is set as
+   a label and the asterisks go away. Anything that does not match the shape is
+   shown as written rather than mangled. */
+function scenarioBody(text) {
+  var wrap = el('div','sbody');
+  String(text == null ? '' : text).split(/\\r?\\n/).forEach(function(raw){
+    var line = raw.trim();
+    if (!line) return;
+    var row = el('div','sline');
+    var parts = /^[-*]\\s*\\*\\*([^*]+)\\*\\*\\s*(.*)$/.exec(line);
+    if (parts) {
+      row.appendChild(el('b','skw', esc(parts[1])));
+      row.appendChild(document.createTextNode(parts[2]));
+    } else {
+      row.appendChild(document.createTextNode(line.replace(/^[-*]\\s*/, '')));
+    }
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
 function issuesOf(change) {
   var all = (change.issues || []).slice();
   (change.deltaSpecs || []).forEach(function(d){ all = all.concat(d.issues || []); });
@@ -537,8 +572,12 @@ function captureScroll() {
     var e = document.getElementById(id);
     if (e) map[id] = e.scrollTop;
   });
-  var body = document.querySelector('.abody');
-  if (body) map.abody = body.scrollTop;
+  // The board scrolls sideways. Losing that position on a rescan throws the
+  // reader back to the first lane, which is the same fault as losing a vertical
+  // position and happens just as often, since every file an agent writes
+  // rebuilds the board.
+  var board = document.getElementById('board');
+  if (board) map.boardLeft = board.scrollLeft;
   // Lanes are keyed by their name, not their index, so adding or removing a
   // lane cannot shift positions onto the wrong column.
   [].slice.call(document.querySelectorAll('.lane')).forEach(function (lane) {
@@ -555,6 +594,8 @@ function restoreScroll(map) {
     var e = document.getElementById(id);
     if (e && map[id]) e.scrollTop = map[id];
   });
+  var board = document.getElementById('board');
+  if (board && map.boardLeft) board.scrollLeft = map.boardLeft;
   [].slice.call(document.querySelectorAll('.lane')).forEach(function (lane) {
     var h = lane.querySelector('h2');
     var cards = lane.querySelector('.cards');
@@ -2012,7 +2053,7 @@ function renderSpecs(snap, needle) {
       r.scenarios.forEach(function(sc){
         var w = el('div','scn');
         w.appendChild(el('div','sname', esc(sc.name)));
-        w.appendChild(el('pre', null, esc(sc.body)));
+        w.appendChild(scenarioBody(sc.body));
         req.appendChild(w);
       });
       box.appendChild(req);
@@ -2311,7 +2352,7 @@ function openPanel(c) {
           r.scenarios.forEach(function(sc){
             var w = el('div','scn');
             w.appendChild(el('div','sname', esc(sc.name)));
-            w.appendChild(el('pre', null, esc(sc.body)));
+            w.appendChild(scenarioBody(sc.body));
             box.appendChild(w);
           });
           sd(box, r);
