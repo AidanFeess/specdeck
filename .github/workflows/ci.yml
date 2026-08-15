@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `dev` is where work lands and `main` is what gets released. `main` requires
+    # these checks to pass, and a check is looked up by commit, so `dev` has to
+    # run them or fast forwarding `main` onto it would be blocked.
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
