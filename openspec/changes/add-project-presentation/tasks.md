@@ -38,6 +38,12 @@
 - [x] 5.4 Exercise the release path end to end after protection is applied, rather than assuming it still works
 - [x] 5.5 Document the branch model and the release steps in the contributing guide
 
+What 5.4 covered: `dev` was fast forwarded onto protected `main` and pushed, which is
+the step protection could refuse, and a throwaway tag was pushed and deleted against the
+protected branch to confirm tags are not covered by the rules. Publishing itself was not
+run, because a release would put a version on npm that cannot be taken back, and
+publishing is done by hand here rather than on a schedule.
+
 ## 6. Verification
 
 - [x] 6.1 Read the rendered README on GitHub at both desktop and mobile widths
