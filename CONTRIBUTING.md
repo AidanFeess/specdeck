@@ -78,20 +78,30 @@ feature branch  ->  dev  ->  main  ->  tag  ->  npm
 Work on a branch named after the OpenSpec change you are implementing, and open the pull
 request against `dev`.
 
-A release is cut by fast forwarding `main` to `dev` and pushing a tag:
+A release is cut by bumping the version on `dev`, letting CI run on it, and only then
+moving `main` and pushing the tag:
 
 ```bash
+git checkout dev
+npm version minor        # updates package.json, commits, and creates the tag
+git push origin dev      # without the tag, so CI runs first
+
+# wait for CI to pass on dev, then:
 git checkout main
 git merge --ff-only dev
 git push origin main
-npm version minor        # updates package.json and creates the tag
-git push --follow-tags
+git push origin v0.2.0   # this is what triggers publishing
 ```
 
-The tag push is what triggers publishing. The release workflow verifies the tag matches
-the manifest, publishes to npm with provenance through trusted publishing, and creates the
-GitHub release. Branch protection covers branches rather than tags, so the tag push is not
-blocked by it.
+The version bump has to happen on `dev` rather than on `main`. `main` requires those
+checks, and a required check is looked up by commit, so a bump committed straight onto
+`main` would arrive with no check at all and be refused. Doing it this way means every
+commit that reaches `main` has already passed.
+
+The tag push is last, and it is what publishes. The release workflow verifies the tag
+matches the manifest, publishes to npm with provenance through trusted publishing, and
+creates the GitHub release. Branch protection covers branches rather than tags, so the tag
+push is not blocked by it.
 
 There is no second reviewer on this project yet, so the protection rules do not require an
 approving review. Protection a solo maintainer has to switch off is protection that stays
