@@ -496,6 +496,44 @@ function setGroupOpen(changeName, index, open) {
   saveGroups();
 }
 
+/* Every view is rebuilt wholesale on each update, which resets the scroll of
+   anything that scrolls. While an agent is writing files this fires every few
+   seconds, so a reader gets thrown back to the top constantly. Positions are
+   captured before a rebuild and restored after, keyed by something stable
+   across rebuilds rather than by element identity. */
+function captureScroll() {
+  var map = {};
+  ['specs', 'home', 'setup'].forEach(function (id) {
+    var e = document.getElementById(id);
+    if (e) map[id] = e.scrollTop;
+  });
+  var body = document.querySelector('.abody');
+  if (body) map.abody = body.scrollTop;
+  // Lanes are keyed by their name, not their index, so adding or removing a
+  // lane cannot shift positions onto the wrong column.
+  [].slice.call(document.querySelectorAll('.lane')).forEach(function (lane) {
+    var h = lane.querySelector('h2');
+    var cards = lane.querySelector('.cards');
+    if (h && cards) map['lane:' + h.textContent.replace(/[0-9]+$/, '')] = cards.scrollTop;
+  });
+  return map;
+}
+
+function restoreScroll(map) {
+  if (!map) return;
+  ['specs', 'home', 'setup'].forEach(function (id) {
+    var e = document.getElementById(id);
+    if (e && map[id]) e.scrollTop = map[id];
+  });
+  [].slice.call(document.querySelectorAll('.lane')).forEach(function (lane) {
+    var h = lane.querySelector('h2');
+    var cards = lane.querySelector('.cards');
+    if (!h || !cards) return;
+    var key = 'lane:' + h.textContent.replace(/[0-9]+$/, '');
+    if (map[key]) cards.scrollTop = map[key];
+  });
+}
+
 function hideAllViews() {
   ['board','specs','setup','home'].forEach(function(id){ document.getElementById(id).hidden = true; });
   document.getElementById('syncbar').hidden = true;
@@ -503,6 +541,7 @@ function hideAllViews() {
 
 function render() {
   if (!state) return;
+  var scroll = captureScroll();
   var res = state.project;
   document.getElementById('banners').innerHTML = '';
 
@@ -516,6 +555,7 @@ function render() {
     document.getElementById('pname').textContent = '';
     document.getElementById('counts').textContent = '';
     renderHome();
+    restoreScroll(scroll);
     tick();
     return;
   }
@@ -567,7 +607,12 @@ function render() {
   document.getElementById('syncbar').hidden = false;
   if (view === 'specs') specs.hidden = false; else board.hidden = false;
 
-  if (view === 'specs') { renderSpecs(snap, needle); tick(); return; }
+  if (view === 'specs') {
+    renderSpecs(snap, needle);
+    restoreScroll(scroll);
+    tick();
+    return;
+  }
 
   board.innerHTML = '';
 
@@ -624,6 +669,7 @@ function render() {
     var still = snap.changes.filter(function(c){ return c.name === selected; })[0];
     if (still) openPanel(still); else closePanel();
   }
+  restoreScroll(scroll);
   tick();
 }
 
@@ -1516,9 +1562,14 @@ function openHandoff(change, verb) {
 
 function openPanel(c) {
   var panel = document.getElementById('panel');
-  var scrollTop = 0;
-  var existing = panel.querySelector('aside');
-  if (existing) scrollTop = existing.scrollTop;
+
+  // The scrolling element is .abody, not the aside. The aside became a flex
+  // column with a fixed header and tab strip when the tabs were stopped from
+  // scrolling, which silently moved the scroll to its body. Reading the aside
+  // here always returned 0, so every rescan threw the reader back to the top,
+  // which is unbearable while an agent is writing files every few seconds.
+  var previousBody = panel.querySelector('.abody');
+  var scrollTop = previousBody ? previousBody.scrollTop : 0;
 
   var a = el('aside');
 
@@ -1735,7 +1786,10 @@ function openPanel(c) {
   a.appendChild(body);
   panel.innerHTML = '';
   panel.appendChild(a);
-  a.scrollTop = scrollTop;
+
+  // Restore onto the element that actually scrolls, and only after it is in the
+  // document, since an element with no layout cannot take a scroll position.
+  body.scrollTop = scrollTop;
 }
 
 /* A group counts as done only when it has tasks and every one is ticked, which

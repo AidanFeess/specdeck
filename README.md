@@ -23,15 +23,20 @@ a model to do it.
 specdeck is meant to be run, not installed:
 
 ```bash
-npx specdeck
+npx specdeck@latest
 ```
 
 That starts a local server and opens your browser on whatever folder you are in.
 Nothing is uploaded anywhere.
 
+Use `@latest` rather than a bare `npx specdeck`. npx caches by the exact text you
+type, so a bare name keeps serving whatever it fetched the first time and never
+checks for a newer release.
+
 ```bash
-npx specdeck ../some-other-project    # open a specific folder
-npx specdeck --port 4000 --no-open    # pick a port, skip the browser
+npx specdeck@latest ../some-other-project   # open a specific folder
+npx specdeck@latest --port 4000 --no-open   # pick a port, skip the browser
+npm i -g specdeck                           # or install it as a real command
 ```
 
 ### Requirements
@@ -118,9 +123,12 @@ files somewhere specdeck does not expect, because that failure is otherwise sile
 
 ## Known limitations
 
-- Handoff currently implements copying only. Opening a terminal or attaching to a
-  running agent session are designed but not built, so selecting them falls back to
-  copying and says so.
+- Handoff can open a terminal or an existing agent session, but only for tools it
+  knows how to start. Anything else falls back to copying the prompt and says which
+  method it used, so a fallback is visible rather than silent.
+- Attaching to a session opens it with the prompt on your clipboard. There is no
+  verified way to push a message into a running conversation, so it does not pretend
+  to.
 - Timelines need git. Without a repository, dates fall back to file modification times,
   which do not survive a clone, and the interface says the values are approximate.
 - The client is a single served HTML document with no build step. That keeps

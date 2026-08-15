@@ -73,6 +73,26 @@ describe('served client document', () => {
     }
   });
 
+  it('preserves scroll against the element that actually scrolls', () => {
+    // The panel is a flex column: the aside is fixed and .abody scrolls. An
+    // earlier version captured scrollTop from the aside, which is always 0, so
+    // every rescan threw the reader back to the top. While an agent writes files
+    // that fires every few seconds and makes the panel unreadable.
+    const script = extractScript();
+
+    // Capture and restore must both name the scrolling element.
+    expect(script).toContain("panel.querySelector('.abody')");
+    expect(script).toContain('body.scrollTop = scrollTop');
+
+    // And must not have gone back to the aside, which does not scroll.
+    expect(script).not.toContain('a.scrollTop = scrollTop');
+
+    // Every rebuilt container is covered, not just the panel.
+    expect(script).toContain('function captureScroll');
+    expect(script).toContain('function restoreScroll');
+    expect(script.split('restoreScroll(scroll)').length - 1).toBeGreaterThanOrEqual(3);
+  });
+
   it('has balanced script and style tags', () => {
     const count = (needle: string): number => APP_HTML.split(needle).length - 1;
     expect(count('<script>')).toBe(count('</script>'));
