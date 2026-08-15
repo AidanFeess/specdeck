@@ -106,6 +106,41 @@ export async function inspectRepo(projectRoot: string): Promise<GitCapability> {
  * that, the remote's default branch is the best guess, because a branch with no
  * upstream is extremely common on a freshly created feature branch.
  */
+/**
+ * Where `target` sits inside `projectRoot`'s repository, in forward slashes.
+ *
+ * Asked of git rather than computed with `path.relative`, because the caller's
+ * spelling of a path and git's need not match even when they name the same
+ * directory. macOS reaches `/var` through a symlink to `/private/var`, Windows
+ * hands out 8.3 short names like `RUNNER~1`, and a project checked out under any
+ * symlinked directory hits the same thing. Comparing those two spellings as
+ * strings produces a path starting with `..`, which reads as "outside the
+ * repository" and quietly disables everything that depends on it.
+ *
+ * Returns undefined when `target` is not in the same repository, which includes
+ * it being in a nested repository of its own.
+ */
+export async function repoRelativePath(
+  projectRoot: string,
+  target: string,
+): Promise<string | undefined> {
+  const [projectTop, targetTop] = await Promise.all([
+    git(['rev-parse', '--show-toplevel'], { cwd: projectRoot }),
+    git(['rev-parse', '--show-toplevel'], { cwd: target }),
+  ]);
+  if (!projectTop.ok || !targetTop.ok) return undefined;
+
+  // Both sides come from git, so they are already spelled the same way.
+  if (projectTop.stdout.trim() !== targetTop.stdout.trim()) return undefined;
+
+  const prefix = await git(['rev-parse', '--show-prefix'], { cwd: target });
+  if (!prefix.ok) return undefined;
+
+  // `--show-prefix` is empty at the repository root and otherwise carries a
+  // trailing slash.
+  return prefix.stdout.trim().replace(/\/+$/, '');
+}
+
 export async function resolveRemoteRef(cwd: string): Promise<string | undefined> {
   const upstream = await git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], {
     cwd,

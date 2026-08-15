@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { git } from '../git/run.js';
-import { inspectRepo } from '../git/repo.js';
+import { inspectRepo, repoRelativePath } from '../git/repo.js';
 import { CHANGE_TRAILER, APPROVER_TRAILER } from './types.js';
 import type { Approver } from './types.js';
 
@@ -53,16 +53,6 @@ export interface ApprovalOutcome {
   output: string;
   message: string;
   blocker?: ApprovalBlocker;
-}
-
-/** Repository-relative path in forward slashes, or undefined when outside. */
-async function repoRelative(projectRoot: string, target: string): Promise<string | undefined> {
-  const top = await git(['rev-parse', '--show-toplevel'], { cwd: projectRoot });
-  if (!top.ok) return undefined;
-
-  const root = resolve(top.stdout.trim());
-  const path = relative(root, resolve(target)).split(/[\\/]/).join('/');
-  return path.startsWith('..') ? undefined : path;
 }
 
 function commitArgs(changeName: string, path: string, approver: Approver): string[] {
@@ -121,7 +111,7 @@ export async function preflightApproval(
     };
   }
 
-  const path = await repoRelative(projectRoot, changeDir);
+  const path = await repoRelativePath(projectRoot, changeDir);
   if (path === undefined) {
     return {
       ...base,
@@ -248,7 +238,7 @@ export async function approveChange(
     return outcome;
   }
 
-  const path = await repoRelative(projectRoot, changeDir);
+  const path = await repoRelativePath(projectRoot, changeDir);
   if (path === undefined || preflight.approver === undefined) {
     return {
       ok: false,

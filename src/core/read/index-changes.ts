@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 import { localFileSource } from '../fs/node-source.js';
@@ -63,16 +64,36 @@ export interface ChangeIndex {
   scannedAt: string;
 }
 
-/** Path of `target` relative to `root`, forward slashes, or undefined. */
+/**
+ * Path of `target` relative to `root`, forward slashes, or undefined.
+ *
+ * Both sides are resolved through their real paths first. The two can be
+ * spelled differently while naming the same directory: macOS reaches `/var`
+ * through a symlink to `/private/var`, Windows hands out 8.3 short names, and a
+ * project checked out under any symlinked directory hits the same thing.
+ * Comparing the spellings directly would report the change as outside its own
+ * project, and its dates would quietly go missing.
+ */
 function relativePath(root: string, target: string): string | undefined {
-  const a = resolve(root);
-  const b = resolve(target);
+  const a = realPath(root);
+  const b = realPath(target);
   if (b === a) return '';
   if (!b.startsWith(a + sep)) return undefined;
   return b
     .slice(a.length + 1)
     .split(sep)
     .join('/');
+}
+
+/** Real path when it can be read, resolved otherwise. */
+function realPath(path: string): string {
+  try {
+    return realpathSync.native(resolve(path));
+  } catch {
+    // A path that does not exist cannot be resolved, and `resolve` is the
+    // closest honest answer.
+    return resolve(path);
+  }
 }
 
 async function indexRoot(

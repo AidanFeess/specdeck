@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -233,6 +233,83 @@ describe('a commit hook that rejects an approval', () => {
     expect(outcome.output).toContain('approvals are not allowed here');
     // And nothing was recorded, so the change is still unapproved.
     expect((await deriveApproval(root, 'add-thing', changeDir)).state).toBe('never-approved');
+  });
+});
+
+describe('a project reached through a differently spelled path', () => {
+  /**
+   * The caller's spelling of a path and git's need not match even when they name
+   * the same directory. macOS reaches `/var` through a symlink to `/private/var`,
+   * which is where every temporary directory on that platform lives, and the
+   * Windows CI runner's TEMP is an 8.3 short name like `RUNNER~1` where git
+   * reports the long one.
+   *
+   * Comparing those two spellings as strings yields a path starting with `..`,
+   * which reads as "outside the repository" and silently disables approval
+   * entirely: every state comes back unknown and approving is refused. This is
+   * not a test-only condition; any project under a symlinked directory hits it.
+   */
+  function aliasedFixture(): Fixture | undefined {
+    const parent = mkdtempSync(join(tmpdir(), 'specdeck-aliased-'));
+    roots.push(parent);
+
+    const real = join(parent, 'real');
+    const alias = join(parent, 'alias');
+    mkdirSync(real);
+
+    run(real, ['init', '--quiet', '--initial-branch=main']);
+    run(real, ['config', 'user.email', 'reviewer@example.com']);
+    run(real, ['config', 'user.name', 'Reviewer']);
+    run(real, ['config', 'commit.gpgsign', 'false']);
+    mkdirSync(join(real, 'openspec/changes/add-thing'), { recursive: true });
+    writeFileSync(join(real, 'openspec/changes/add-thing/proposal.md'), '## Why\nreasons\n');
+    run(real, ['add', '-A']);
+    run(real, ['commit', '--quiet', '-m', 'init']);
+
+    try {
+      symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch {
+      // Some Windows configurations refuse even a junction. Skipping is honest;
+      // the platforms where this matters most run it.
+      return undefined;
+    }
+
+    return { root: alias, changeDir: join(alias, 'openspec/changes/add-thing') };
+  }
+
+  it('reads approval through the alias rather than reporting it unknown', async () => {
+    const fixture = aliasedFixture();
+    if (fixture === undefined) return;
+
+    const before = await deriveApproval(fixture.root, 'add-thing', fixture.changeDir);
+    expect(before.state).toBe('never-approved');
+
+    const outcome = await approveChange(fixture.root, 'add-thing', fixture.changeDir);
+    expect(outcome.ok, outcome.message).toBe(true);
+
+    const after = await deriveApproval(fixture.root, 'add-thing', fixture.changeDir);
+    expect(after.state).toBe('approved');
+  });
+
+  it('still detects drift through the alias', async () => {
+    const fixture = aliasedFixture();
+    if (fixture === undefined) return;
+
+    await approveChange(fixture.root, 'add-thing', fixture.changeDir);
+    writeFileSync(join(fixture.changeDir, 'proposal.md'), '## Why\nchanged\n');
+
+    const approval = await deriveApproval(fixture.root, 'add-thing', fixture.changeDir);
+    expect(approval.state).toBe('needs-review');
+    expect(approval.drift).toContain('openspec/changes/add-thing/proposal.md');
+  });
+
+  it('does not refuse the preflight as outside the repository', async () => {
+    const fixture = aliasedFixture();
+    if (fixture === undefined) return;
+
+    const preflight = await preflightApproval(fixture.root, 'add-thing', fixture.changeDir);
+    expect(preflight.blocker).not.toBe('outside-repo');
+    expect(preflight.ok, preflight.message).toBe(true);
   });
 });
 

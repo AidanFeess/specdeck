@@ -1,6 +1,5 @@
-import { relative, resolve } from 'node:path';
-
 import { git } from '../git/run.js';
+import { repoRelativePath } from '../git/repo.js';
 import { CHANGE_TRAILER, APPROVER_TRAILER, readTrailer } from './types.js';
 import type { Approval, ApprovalRecord } from './types.js';
 
@@ -15,16 +14,6 @@ import type { Approval, ApprovalRecord } from './types.js';
 const FIELD = '\x1f';
 const RECORD = '\x1e';
 
-/** Repository-relative path in forward slashes, or undefined when outside. */
-async function repoRelative(projectRoot: string, target: string): Promise<string | undefined> {
-  const top = await git(['rev-parse', '--show-toplevel'], { cwd: projectRoot });
-  if (!top.ok) return undefined;
-
-  const root = resolve(top.stdout.trim());
-  const path = relative(root, resolve(target)).split(/[\\/]/).join('/');
-  return path.startsWith('..') ? undefined : path;
-}
-
 /**
  * Finds the newest commit approving this change, and whether anything has moved
  * since.
@@ -38,7 +27,7 @@ export async function deriveApproval(
   changeName: string,
   changeDir: string,
 ): Promise<Approval> {
-  const path = await repoRelative(projectRoot, changeDir);
+  const path = await repoRelativePath(projectRoot, changeDir);
   if (path === undefined) {
     return {
       state: 'unknown',
