@@ -4,7 +4,10 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
+    // `.claude/` holds tool-generated files and, when an agent is working, a git
+    // worktree containing a whole second copy of this repository. Linting that
+    // copy reports errors against files that are not this checkout's source.
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.claude/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
