@@ -32,6 +32,19 @@ let editor = null;
 /** What the live editor was mounted for: { name, path, clash }. */
 let mounted = null;
 
+/**
+ * The last artifact fetched per path.
+ *
+ * The panel is rebuilt on every watcher event, and the file it shows arrives
+ * by fetch. Without this, each rebuild paints a loading stub, the scroll
+ * restore in openPanel lands on a pane with no height, and the reader is
+ * thrown back to the top every few seconds while an agent writes files. The
+ * cached copy is painted synchronously so the restore has something to land
+ * on; the fetch then revalidates and repaints only when the file actually
+ * changed.
+ */
+const artifactCache = {};
+
 /** Tears down any live editor. Called before the panel is rebuilt. */
 export function closeArtifactEditor() {
   if (editor) {
@@ -128,23 +141,41 @@ export function renderArtifactsTab(body, change, deps) {
     return;
   }
 
-  pane.appendChild(el('div', 'muted pad', 'Loading…'));
+  const cached = artifactCache[path];
+  if (cached) {
+    paint(pane, change, cached, deps);
+  } else {
+    pane.appendChild(el('div', 'muted pad', 'Loading…'));
+  }
 
   fetch('/api/artifact?path=' + encodeURIComponent(path))
     .then(function (r) {
       return r.json();
     })
     .then(function (result) {
-      pane.innerHTML = '';
       if (!result.ok) {
+        delete artifactCache[path];
+        pane.innerHTML = '';
         pane.appendChild(
           el('div', 'pad err', esc(result.message || 'That file could not be read.')),
         );
         return;
       }
+      artifactCache[path] = result.artifact;
+      // Already painted from cache, and the file has not moved since: the
+      // pane is correct as it stands, and repainting it would only cost the
+      // reader their place.
+      if (cached && cached.hash === result.artifact.hash) return;
+      const scroller = pane.closest('.abody');
+      const at = scroller ? scroller.scrollTop : 0;
+      pane.innerHTML = '';
       paint(pane, change, result.artifact, deps);
+      if (scroller) scroller.scrollTop = at;
     })
     .catch(function () {
+      // With a cached copy on screen, a dropped request is not worth
+      // replacing the document with an error; the next event retries.
+      if (cached) return;
       pane.innerHTML = '';
       pane.appendChild(el('div', 'pad err', 'Could not reach specdeck.'));
     });
