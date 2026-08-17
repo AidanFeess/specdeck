@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "specdeck",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist/cli/index.js", ".", "--port", "7799", "--no-open"],
+      "port": 7799
+    }
+  ]
+}
