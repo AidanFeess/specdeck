@@ -2,20 +2,28 @@
      preference when no explicit choice has been made, so the toggle can always
      win in both directions. */
 :root {
-  --bg: #fbfbfc;
+  --bg: #f6f7f9;
   --panel: #ffffff;
-  --lane: #f2f4f7;
-  --line: #e3e6ec;
-  --ink: #16191f;
-  --muted: #6b7382;
-  --faint: #99a1b0;
-  --accent: #3862e0;
-  --accent-soft: #e7edfd;
-  --warn: #a2680d;
-  --err: #c23b30;
+  --lane: #eef0f4;
+  --line: #e2e5eb;
+  --line-strong: #d3d7e0;
+  --ink: #171a21;
+  --muted: #667085;
+  --faint: #98a1b2;
+  --accent: #4059d6;
+  --accent-ink: #3348b8;
+  --accent-soft: #e9edfc;
+  --ok: #1a7f4e;
+  --warn: #996209;
+  --err: #c0392f;
   --thumb: #ccd2dc;
   --thumb-hover: #b0b8c6;
-  --shadow: 0 1px 2px rgba(16, 20, 28, 0.05), 0 8px 24px rgba(16, 20, 28, 0.06);
+  --shadow: 0 1px 2px rgba(16, 20, 28, 0.04), 0 12px 32px rgba(16, 20, 28, 0.08);
+  --shadow-sm: 0 1px 2px rgba(16, 20, 28, 0.05), 0 2px 8px rgba(16, 20, 28, 0.04);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
 }
 :root[data-theme='dark'],
 html:not([data-theme]) {
@@ -23,38 +31,46 @@ html:not([data-theme]) {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0f1116;
+    --bg: #0e1015;
     --panel: #171a21;
-    --lane: #14171d;
-    --line: #262b35;
-    --ink: #e6e9ef;
-    --muted: #949cab;
-    --faint: #6d7583;
-    --accent: #7093ff;
-    --accent-soft: #1d2740;
+    --lane: #13151b;
+    --line: #252a34;
+    --line-strong: #323947;
+    --ink: #e8ebf1;
+    --muted: #99a1b0;
+    --faint: #69707e;
+    --accent: #7d9aff;
+    --accent-ink: #9ab0ff;
+    --accent-soft: #1e2740;
+    --ok: #4cc38a;
     --warn: #e2a949;
     --err: #f0736a;
     --thumb: #333a47;
     --thumb-hover: #454e5e;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
   }
 }
 :root[data-theme='dark'] {
-  --bg: #0f1116;
+  --bg: #0e1015;
   --panel: #171a21;
-  --lane: #14171d;
-  --line: #262b35;
-  --ink: #e6e9ef;
-  --muted: #949cab;
-  --faint: #6d7583;
-  --accent: #7093ff;
-  --accent-soft: #1d2740;
+  --lane: #13151b;
+  --line: #252a34;
+  --line-strong: #323947;
+  --ink: #e8ebf1;
+  --muted: #99a1b0;
+  --faint: #69707e;
+  --accent: #7d9aff;
+  --accent-ink: #9ab0ff;
+  --accent-soft: #1e2740;
+  --ok: #4cc38a;
   --warn: #e2a949;
   --err: #f0736a;
   --thumb: #333a47;
   --thumb-hover: #454e5e;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
   color-scheme: dark;
 }
 
@@ -96,6 +112,15 @@ html:not([data-theme]) {
   background: transparent;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 html,
 body {
   height: 100%;
@@ -105,15 +130,27 @@ body {
   background: var(--bg);
   color: var(--ink);
   font:
-    14px/1.55 ui-sans-serif,
+    14px/1.55 'Inter',
+    ui-sans-serif,
     system-ui,
     -apple-system,
     'Segoe UI',
     Roboto,
     sans-serif;
+  -webkit-font-smoothing: antialiased;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Every interactive element gets the same visible focus treatment, and only
+     for keyboard focus, so mouse clicks stay quiet. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 header {
@@ -122,7 +159,7 @@ header {
   gap: 10px;
   flex-wrap: wrap;
   flex: 0 0 auto;
-  padding: 10px 16px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -131,16 +168,20 @@ h1 {
   margin: 0;
   font-weight: 650;
   letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 h1 button#brand {
   font: inherit;
-  font-weight: 650;
+  font-weight: 700;
   border: 0;
   background: transparent;
   color: var(--ink);
   padding: 0;
   cursor: pointer;
   border-radius: 4px;
+  letter-spacing: -0.02em;
 }
 h1 button#brand:hover {
   color: var(--accent);
@@ -150,7 +191,7 @@ h1 button#brand:hover {
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  padding: 12px 0;
+  padding: 13px 0;
   border-bottom: 1px solid var(--line);
 }
 .setrow .k {
@@ -179,7 +220,7 @@ h1 em {
 }
 .chip {
   font-size: 12px;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border-radius: 99px;
   white-space: nowrap;
   border: 1px solid var(--line);
@@ -189,18 +230,22 @@ h1 em {
 button {
   font: inherit;
   font-size: 13px;
-  padding: 5px 10px;
-  border-radius: 7px;
+  padding: 5px 11px;
+  border-radius: var(--r-md);
   cursor: pointer;
-  border: 1px solid var(--line);
-  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
   color: var(--ink);
+  font-weight: 500;
   transition:
     border-color 0.12s,
-    background 0.12s;
+    background 0.12s,
+    color 0.12s,
+    box-shadow 0.12s;
 }
 button:hover {
   border-color: var(--accent);
+  color: var(--accent-ink);
 }
 button.icon {
   padding: 5px 9px;
@@ -208,34 +253,48 @@ button.icon {
 input {
   font: inherit;
   font-size: 13px;
-  padding: 6px 9px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-  background: var(--bg);
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
   color: var(--ink);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+input::placeholder {
+  color: var(--faint);
 }
 input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 #path {
   min-width: 240px;
 }
 #filter {
-  min-width: 150px;
+  min-width: 170px;
+  background: var(--bg);
+  border-radius: 99px;
+}
+#filter:focus {
+  background: var(--panel);
 }
 
 .banner {
-  padding: 9px 16px;
+  padding: 9px 18px;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
   flex: 0 0 auto;
 }
 .banner.err {
-  background: color-mix(in srgb, var(--err) 12%, var(--bg));
+  background: color-mix(in srgb, var(--err) 10%, var(--bg));
+  border-bottom-color: color-mix(in srgb, var(--err) 30%, var(--line));
 }
 .banner.warn {
-  background: color-mix(in srgb, var(--warn) 16%, var(--bg));
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg));
+  border-bottom-color: color-mix(in srgb, var(--warn) 30%, var(--line));
 }
 
 /* The board scrolls horizontally. Each lane scrolls its own cards vertically.
@@ -244,8 +303,8 @@ input:focus {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 16px 18px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -253,28 +312,34 @@ input:focus {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 0 0 244px;
-  width: 244px;
+  flex: 0 0 252px;
+  width: 252px;
   background: var(--lane);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
 }
 .lane > h2 {
   flex: 0 0 auto;
   margin: 0;
-  padding: 11px 12px 8px;
+  padding: 12px 14px 9px;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   color: var(--muted);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 .lane > h2 b {
-  color: var(--faint);
+  color: var(--muted);
   font-weight: 600;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  border-radius: 99px;
+  padding: 0 7px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
 }
 .cards {
   flex: 1 1 auto;
@@ -286,16 +351,20 @@ input:focus {
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 10px 11px;
+  border-radius: 10px;
+  padding: 11px 12px;
   margin-bottom: 8px;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.04);
   transition:
     border-color 0.12s,
-    transform 0.08s;
+    box-shadow 0.15s,
+    transform 0.1s;
 }
 .card:hover {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 .card:active {
   transform: scale(0.995);
@@ -317,15 +386,20 @@ input:focus {
 .bar {
   height: 4px;
   border-radius: 99px;
-  background: var(--line);
-  margin-top: 9px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  margin-top: 10px;
   overflow: hidden;
 }
 .bar > i {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 72%, var(--ok))
+  );
   border-radius: 99px;
+  transition: width 0.25s ease;
 }
 .flag {
   font-size: 11.5px;
@@ -340,7 +414,7 @@ input:focus {
 .empty {
   color: var(--faint);
   font-size: 12px;
-  padding: 4px 2px 8px;
+  padding: 4px 4px 8px;
 }
 
 /* The panel itself never scrolls. Header and tabs are fixed, and only the tab
@@ -361,7 +435,7 @@ aside {
 }
 .ahead {
   flex: 0 0 auto;
-  padding: 16px 20px 12px;
+  padding: 18px 20px 12px;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -387,7 +461,7 @@ aside {
   border-radius: 0;
   background: transparent;
   white-space: nowrap;
-  padding: 9px 11px;
+  padding: 9px 12px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 550;
@@ -397,19 +471,21 @@ aside {
 .tabs button:hover {
   color: var(--ink);
   border-color: transparent;
-  border-bottom-color: var(--line);
+  border-bottom-color: var(--line-strong);
+  box-shadow: none;
 }
 .tabs button.on {
-  color: var(--accent);
+  color: var(--accent-ink);
   border-bottom-color: var(--accent);
 }
 .tabs button .n {
   color: var(--faint);
   font-weight: 500;
   margin-left: 5px;
+  font-variant-numeric: tabular-nums;
 }
 .tabs button.on .n {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .abody {
@@ -428,15 +504,16 @@ aside {
 }
 .pills button {
   font-size: 12px;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 99px;
   background: var(--bg);
+  border-color: var(--line);
   color: var(--muted);
   font-weight: 550;
 }
 .pills button.on {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-ink);
   border-color: transparent;
 }
 .pills button .n {
@@ -445,7 +522,7 @@ aside {
   font-weight: 500;
 }
 .pills button.on .n {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .stats {
@@ -457,8 +534,8 @@ aside {
 .stat {
   flex: 1 1 140px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 9px 11px;
+  border-radius: 10px;
+  padding: 10px 12px;
   background: var(--bg);
 }
 .stat .k {
@@ -469,10 +546,11 @@ aside {
   color: var(--muted);
 }
 .stat .v {
-  font-size: 19px;
-  font-weight: 650;
+  font-size: 20px;
+  font-weight: 700;
   letter-spacing: -0.02em;
   margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 .stat .v small {
   font-size: 13px;
@@ -480,14 +558,14 @@ aside {
   color: var(--faint);
 }
 .stat .bar {
-  margin-top: 7px;
+  margin-top: 8px;
 }
 .abody h3 {
-  margin: 22px 0 8px;
+  margin: 24px 0 8px;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
 .row {
@@ -509,7 +587,7 @@ aside {
 /* Tasks */
 .tgroup {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 10px;
   margin-bottom: 8px;
   background: var(--bg);
   overflow: hidden;
@@ -520,7 +598,7 @@ aside {
   gap: 9px;
   width: 100%;
   text-align: left;
-  padding: 9px 11px;
+  padding: 10px 12px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -533,6 +611,7 @@ aside {
 .thead:hover {
   background: var(--lane);
   border-color: transparent;
+  color: var(--ink);
 }
 .thead .caret {
   flex: 0 0 auto;
@@ -548,12 +627,13 @@ aside {
   font-weight: 500;
   font-size: 12px;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .thead .tdone {
-  color: var(--accent);
+  color: var(--ok);
 }
 .tlist {
-  padding: 2px 11px 10px 30px;
+  padding: 2px 12px 10px 30px;
   border-top: 1px solid var(--line);
 }
 .tgroup:not(.open) .tlist {
@@ -577,7 +657,7 @@ aside {
   text-decoration-color: var(--faint);
 }
 .task.done .box {
-  color: var(--accent);
+  color: var(--ok);
 }
 .task .tid {
   color: var(--faint);
@@ -587,8 +667,8 @@ aside {
 /* Requirements */
 .req {
   border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 11px;
+  border-radius: 10px;
+  padding: 12px;
   margin-bottom: 8px;
   background: var(--bg);
 }
@@ -598,10 +678,10 @@ aside {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
   margin-bottom: 6px;
 }
 .req .rname {
@@ -614,7 +694,7 @@ aside {
   margin-top: 3px;
 }
 .scn {
-  border-left: 2px solid var(--line);
+  border-left: 2px solid var(--line-strong);
   margin: 9px 0 0 2px;
   padding: 2px 0 2px 11px;
 }
@@ -668,63 +748,78 @@ button.task {
   color: inherit;
   padding: 3px 4px;
   margin-left: -4px;
+  font-weight: 400;
 }
 button.task:hover {
   background: var(--lane);
   border-color: transparent;
+  color: inherit;
 }
 button.task.busy {
   opacity: 0.5;
   pointer-events: none;
 }
 
+/* The view switcher. One raised segment, the rest quiet. */
 .seg {
   display: inline-flex;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  overflow: hidden;
+  border-radius: 9px;
+  background: var(--bg);
+  padding: 2px;
+  gap: 2px;
 }
 .seg button {
-  border: 0;
-  border-radius: 0;
-  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 11px;
 }
 .seg button + button {
-  border-left: 1px solid var(--line);
+  border-left: 1px solid transparent;
+}
+.seg button:hover {
+  color: var(--ink);
+  border-color: transparent;
 }
 .seg button.on {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--panel);
+  color: var(--ink);
   font-weight: 600;
+  border-color: var(--line);
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.07);
 }
 
 .act {
   margin-top: 9px;
   width: 100%;
   font-size: 12px;
-  padding: 5px 8px;
+  padding: 6px 8px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-ink);
   border-color: transparent;
   font-weight: 600;
 }
 .act:hover {
   border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .specs {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 18px 16px;
 }
 .cap {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  padding: 15px 17px;
   margin: 0 auto 10px;
   max-width: 900px;
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.03);
 }
 .cap h3 {
   margin: 0;
@@ -745,7 +840,8 @@ button.task.busy {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(8, 10, 14, 0.5);
+  background: rgba(8, 10, 14, 0.45);
+  backdrop-filter: blur(2px);
   z-index: 20;
   display: flex;
   align-items: center;
@@ -755,10 +851,21 @@ button.task.busy {
 .sheet {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--shadow);
   width: min(620px, 96vw);
   padding: 18px 20px 20px;
+  animation: sheet-in 0.16s ease;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .sheet h3 {
   margin: 0 0 4px;
@@ -767,7 +874,7 @@ button.task.busy {
 .sheet pre {
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 11px;
   margin: 12px 0;
   white-space: pre-wrap;
@@ -791,11 +898,22 @@ button.task.busy {
   z-index: 30;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 9px 14px;
   box-shadow: var(--shadow);
   font-size: 13px;
   max-width: 90vw;
+  animation: toast-in 0.18s ease;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
 }
 .toast.err {
   border-color: var(--err);
@@ -804,13 +922,13 @@ button.task.busy {
 
 .drop {
   border: 2px dashed var(--accent);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: var(--accent-soft);
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
   font-size: 13px;
   padding: 18px 10px;
@@ -819,7 +937,7 @@ button.task.busy {
   opacity: 0.45;
 }
 .tl {
-  border-left: 2px solid var(--line);
+  border-left: 2px solid var(--line-strong);
   margin-left: 6px;
   padding-left: 14px;
 }
@@ -837,6 +955,7 @@ button.task.busy {
   height: 7px;
   border-radius: 99px;
   background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .tl .when {
   color: var(--muted);
@@ -863,7 +982,7 @@ button.task.busy {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 26px 16px 40px;
+  padding: 28px 16px 40px;
 }
 .setup .inner {
   max-width: 720px;
@@ -871,7 +990,7 @@ button.task.busy {
 }
 .setup h2 {
   margin: 0 0 4px;
-  font-size: 20px;
+  font-size: 21px;
   letter-spacing: -0.02em;
 }
 .setup .path {
@@ -888,7 +1007,7 @@ button.task.busy {
   overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--panel);
 }
 .tool {
@@ -896,7 +1015,7 @@ button.task.busy {
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   cursor: pointer;
   font-size: 13px;
 }
@@ -912,12 +1031,12 @@ button.task.busy {
 }
 .tool .found {
   font-size: 11px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .setup pre {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 11px;
   margin: 14px 0;
   white-space: pre-wrap;
@@ -940,7 +1059,7 @@ button.task.busy {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 16px 40px;
+  padding: 26px 18px 40px;
 }
 .home .inner {
   max-width: 1040px;
@@ -955,7 +1074,7 @@ button.task.busy {
 }
 .home h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 21px;
   letter-spacing: -0.02em;
 }
 .home .sub {
@@ -970,19 +1089,23 @@ button.task.busy {
 }
 .pcard {
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: var(--panel);
-  padding: 14px 15px;
+  padding: 15px 16px;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.04);
   transition:
     border-color 0.12s,
-    transform 0.08s;
+    box-shadow 0.15s,
+    transform 0.1s;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 .pcard:hover {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 .pcard:active {
   transform: scale(0.996);
@@ -1022,7 +1145,7 @@ button.task.busy {
 }
 .pcard .plane span {
   font-size: 11px;
-  padding: 1px 7px;
+  padding: 1px 8px;
   border-radius: 99px;
   background: var(--lane);
   color: var(--muted);
@@ -1091,7 +1214,7 @@ button.task.busy {
   line-height: 1.5;
 }
 .move button:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .move button:disabled {
   opacity: 0.35;
@@ -1131,7 +1254,7 @@ button.task.busy {
 .tok {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 99px;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -1141,13 +1264,15 @@ button.task.busy {
 .tok.uncommitted {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+  background: color-mix(in srgb, var(--warn) 7%, var(--bg));
 }
 .tok.ahead {
   color: var(--muted);
 }
 .tok.behind {
-  color: var(--accent);
+  color: var(--accent-ink);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
 }
 
 .syncbar {
@@ -1156,7 +1281,7 @@ button.task.busy {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 7px 16px;
+  padding: 7px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   font-size: 12.5px;
@@ -1175,10 +1300,13 @@ button.task.busy {
 .ghost {
   border-style: dashed;
   background: transparent;
+  box-shadow: none;
   cursor: default;
 }
 .ghost:hover {
   border-color: var(--accent);
+  transform: none;
+  box-shadow: none;
 }
 .ghost .name {
   color: var(--muted);
@@ -1216,7 +1344,7 @@ button.task.busy {
   width: 100%;
   padding: 5px 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: none;
   color: var(--ink);
   font: inherit;
@@ -1225,6 +1353,7 @@ button.task.busy {
 }
 .frow:hover {
   background: var(--lane);
+  color: var(--ink);
 }
 .frow.on {
   background: var(--accent-soft);
@@ -1264,6 +1393,11 @@ button.task.busy {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+}
+.icon.primary:hover {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  color: #fff;
 }
 
 /* Rendered artifact markdown. Deliberately close to the document it came from:
@@ -1313,7 +1447,7 @@ button.task.busy {
 .fdoc pre {
   background: var(--lane);
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow-x: auto;
 }
 .fdoc pre code {
@@ -1323,7 +1457,7 @@ button.task.busy {
 .fdoc blockquote {
   margin: 0 0 10px;
   padding-left: 10px;
-  border-left: 3px solid var(--line);
+  border-left: 3px solid var(--line-strong);
   color: var(--muted);
 }
 .fdoc table {
@@ -1337,13 +1471,13 @@ button.task.busy {
   text-align: left;
 }
 .fdoc a {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .fsource {
   background: var(--lane);
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.5;
@@ -1352,8 +1486,8 @@ button.task.busy {
 }
 
 .fedit {
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
   overflow: hidden;
 }
 .fedit .cm-editor {
@@ -1368,7 +1502,7 @@ button.task.busy {
 .fclash {
   border: 1px solid var(--warn);
   background: color-mix(in srgb, var(--warn) 8%, transparent);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 8px 10px;
   margin-bottom: 8px;
   font-size: 12px;
@@ -1469,18 +1603,24 @@ button.task.busy {
   background: var(--panel);
   color: var(--muted);
   border-radius: 999px;
-  padding: 2px 9px;
+  padding: 2px 10px;
   font: inherit;
   font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    color 0.12s;
 }
 .chip:hover {
   border-color: var(--thumb-hover);
+  color: var(--ink);
 }
 .chip.on {
   background: var(--accent-soft);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .chk {
   display: inline-flex;
@@ -1491,7 +1631,7 @@ button.task.busy {
 }
 .lfilters input[type='date'] {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 2px 6px;
   background: var(--panel);
   color: var(--ink);
@@ -1510,9 +1650,12 @@ button.task.busy {
   font-weight: 600;
 }
 .ltable td {
-  padding: 6px 8px;
+  padding: 7px 8px;
   border-top: 1px solid var(--line);
   vertical-align: baseline;
+}
+.ltable tbody tr:hover td {
+  background: color-mix(in srgb, var(--ink) 2.5%, transparent);
 }
 .ltable tr.archived {
   opacity: 0.62;
@@ -1526,8 +1669,11 @@ button.task.busy {
   color: var(--muted);
   cursor: pointer;
 }
+.sortbtn:hover {
+  color: var(--ink);
+}
 .sortbtn.on {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .linkish {
   background: none;
@@ -1540,7 +1686,7 @@ button.task.busy {
   text-align: left;
 }
 .linkish:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
   text-decoration: underline;
 }
 .lanetag {
@@ -1550,7 +1696,8 @@ button.task.busy {
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 .faint {
   color: var(--faint);
@@ -1563,13 +1710,13 @@ button.task.busy {
   font-size: 11px;
   color: var(--muted);
   padding: 2px 0 2px 10px;
-  border-left: 2px solid var(--line);
+  border-left: 2px solid var(--line-strong);
   margin: 2px 0;
 }
 
 .row select {
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
   padding: 2px 6px;
   background: var(--panel);
   color: var(--ink);

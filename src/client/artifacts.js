@@ -18,8 +18,19 @@ const editing = {};
 const drafts = {};
 /** What was on disk when a save was refused, per change. */
 const conflicts = {};
+/**
+ * The hash a save must be based on, per change, fixed when editing starts.
+ *
+ * It lives here rather than in a closure because the panel repaints on every
+ * watcher event, and a repaint must never rebase an open edit onto whatever
+ * just arrived on disk. Advancing this is always an explicit act: a successful
+ * save, or the user choosing to overwrite after a refused one.
+ */
+const bases = {};
 
 let editor = null;
+/** What the live editor was mounted for: { name, path, clash }. */
+let mounted = null;
 
 /** Tears down any live editor. Called before the panel is rebuilt. */
 export function closeArtifactEditor() {
@@ -27,6 +38,7 @@ export function closeArtifactEditor() {
     editor.destroy();
     editor = null;
   }
+  mounted = null;
   const host = document.getElementById('editor');
   if (host) host.innerHTML = '';
 }
@@ -34,6 +46,15 @@ export function closeArtifactEditor() {
 /** True when an edit is open with text the user has not saved. */
 export function hasUnsavedEdit(changeName) {
   return Boolean(editing[changeName] && drafts[changeName] !== undefined);
+}
+
+/**
+ * Ends a change's edit and throws its draft away. For the moment the user has
+ * already confirmed a discard, so the text does not resurface when the panel
+ * is next opened.
+ */
+export function discardEdit(changeName) {
+  stopEditing({ name: changeName });
 }
 
 /**
@@ -48,6 +69,7 @@ export function resetEditing() {
   for (const name of Object.keys(editing)) delete editing[name];
   for (const name of Object.keys(drafts)) delete drafts[name];
   for (const name of Object.keys(conflicts)) delete conflicts[name];
+  for (const name of Object.keys(bases)) delete bases[name];
   closeArtifactEditor();
 }
 
@@ -203,9 +225,26 @@ function paint(pane, change, artifact, deps) {
 function paintEditor(change, artifact, deps) {
   const { el, esc } = deps;
 
+  // The panel repaints on every watcher event, and this is called from each
+  // repaint. If the editor the user is typing into is already showing this
+  // file, leave it alone: rebuilding it would steal focus, reset the cursor,
+  // and drop the undo history mid-keystroke. A rebuild happens only when the
+  // file being edited changes or a conflict notice has to appear or go away.
+  const clash = conflicts[change.name];
+  if (
+    editor &&
+    mounted &&
+    mounted.name === change.name &&
+    mounted.path === artifact.path &&
+    mounted.clash === Boolean(clash)
+  ) {
+    return;
+  }
+
   // Tear down any previous editor before building the new surface. Doing it
   // afterwards would empty the host that surface was just mounted into.
   closeArtifactEditor();
+  mounted = { name: change.name, path: artifact.path, clash: Boolean(clash) };
 
   const host = document.getElementById('editor');
 
@@ -217,7 +256,11 @@ function paintEditor(change, artifact, deps) {
 
   // The text an earlier refused save preserved, if there is any.
   const startingText = drafts[change.name] !== undefined ? drafts[change.name] : artifact.text;
-  let baseHash = artifact.hash;
+
+  // The base is fixed the moment editing starts. Later repaints reach this
+  // code with a fresher artifact, and adopting its hash would make the next
+  // save silently overwrite whatever produced it.
+  if (bases[change.name] === undefined) bases[change.name] = artifact.hash;
 
   const pane = sheet;
 
@@ -235,7 +278,6 @@ function paintEditor(change, artifact, deps) {
 
   // A refused save leaves this behind. Until the user decides what to do about
   // it, saving again would be guessing on their behalf.
-  const clash = conflicts[change.name];
   if (clash) {
     const notice = el('div', 'fclash');
     notice.appendChild(
@@ -257,7 +299,7 @@ function paintEditor(change, artifact, deps) {
     overwrite.onclick = function () {
       // Explicit, and only ever explicit. This is the one path that discards
       // somebody else's write, so it exists as a button and not as a fallback.
-      baseHash = clash.hash;
+      bases[change.name] = clash.hash;
       delete conflicts[change.name];
       save.onclick();
     };
@@ -285,7 +327,7 @@ function paintEditor(change, artifact, deps) {
     fetch('/api/artifact', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path: artifact.path, text: text, hash: baseHash }),
+      body: JSON.stringify({ path: artifact.path, text: text, hash: bases[change.name] }),
     })
       .then(function (r) {
         return r.json();
@@ -295,7 +337,6 @@ function paintEditor(change, artifact, deps) {
         if (result.ok) {
           // The board catches up on its own: the write fires the watcher, which
           // pushes an update. Nothing here has to ask for one.
-          baseHash = result.hash;
           stopEditing(change);
           deps.toast('Saved.');
           deps.validate(change);
@@ -331,6 +372,7 @@ function stopEditing(change) {
   editing[change.name] = false;
   delete drafts[change.name];
   delete conflicts[change.name];
+  delete bases[change.name];
   closeArtifactEditor();
 }
 

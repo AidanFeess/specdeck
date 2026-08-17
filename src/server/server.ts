@@ -34,6 +34,7 @@ import {
   type ChangeSync,
 } from '../core/git/sync.js';
 import { fetchRemote, pullFastForward } from '../core/git/repo.js';
+import { git } from '../core/git/run.js';
 import { readOverview } from '../core/read/overview.js';
 import { orderProjects, isProjectSort, type ProjectPlacement } from '../core/read/order.js';
 import { archiveChange, preflightArchive } from '../core/openspec/archive.js';
@@ -90,6 +91,23 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(payload);
 }
 
+/**
+ * True only for an Origin whose hostname is exactly a loopback name. Parsed
+ * rather than prefix-matched, because `http://localhost.evil.com` starts with
+ * `http://localhost` and is somebody else's page.
+ */
+function isLoopbackOrigin(origin: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  const name = parsed.hostname;
+  return name === 'localhost' || name === '127.0.0.1' || name === '[::1]' || name === '::1';
+}
+
 async function readBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(chunk as Buffer);
@@ -126,10 +144,14 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
 
   async function treeHistory(): Promise<TreeHistory> {
     const root = resolve(activeProject);
+    // The cheap question first. Running the full log before comparing heads
+    // would do all the work the cache exists to avoid.
+    if (historyCache?.root === root) {
+      const head = await git(['rev-parse', 'HEAD'], { cwd: root });
+      if (head.ok && head.stdout.trim() === historyCache.head) return historyCache.history;
+    }
     const fresh = await readTreeHistory(root);
     if (!fresh.available || fresh.head === undefined) return fresh;
-    if (historyCache?.root === root && historyCache.head === fresh.head)
-      return historyCache.history;
     historyCache = { root, head: fresh.head, history: fresh };
     return fresh;
   }
@@ -214,13 +236,11 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
       const path = url.pathname;
 
       // Loopback only, but a browser page on another origin could still reach
-      // this server, so cross-origin requests are refused outright.
+      // this server, so cross-origin requests are refused outright. The origin
+      // is parsed and its hostname compared exactly: a prefix check would let
+      // http://localhost.evil.com through.
       const origin = request.headers.origin;
-      if (
-        origin !== undefined &&
-        !origin.startsWith('http://127.0.0.1') &&
-        !origin.startsWith('http://localhost')
-      ) {
+      if (origin !== undefined && !isLoopbackOrigin(origin)) {
         json(response, 403, { error: 'Cross-origin requests are not allowed.' });
         return;
       }
@@ -603,7 +623,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
         }
         const tasksArtifact = change.artifacts
           .flatMap((artifact) => artifact.existingPaths)
-          .find((candidate) => /tasks.md$/i.test(candidate));
+          .find((candidate) => /tasks\.md$/i.test(candidate));
         if (tasksArtifact === undefined) {
           json(response, 200, {
             available: false,
@@ -862,6 +882,13 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
 
       json(response, 404, { error: `No route for ${path}` });
     })().catch((error: unknown) => {
+      // A route that already wrote headers (the SSE stream is the standing
+      // example) cannot be answered with a 500: writeHead would throw inside
+      // this callback and take the whole process down.
+      if (response.headersSent) {
+        response.end();
+        return;
+      }
       json(response, 500, {
         error: error instanceof Error ? error.message : 'Unexpected server error.',
       });

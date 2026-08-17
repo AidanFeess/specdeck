@@ -2,6 +2,7 @@ import {
   renderArtifactsTab,
   closeArtifactEditor,
   hasUnsavedEdit,
+  discardEdit,
   resetEditing,
 } from './artifacts.js';
 import {
@@ -47,6 +48,53 @@ var activeCapability = {};
 var validation = {};
 /** Capabilities currently shown as whole documents rather than parsed. */
 var capDocument = {};
+/**
+ * Rendered capability documents, keyed by path. Without this every render of
+ * the specs view refetches every open document, including once per keystroke
+ * in the filter box. Cleared whenever fresh state is adopted, so a document
+ * that changed on disk is picked up on the next watcher event.
+ */
+var capDocCache = {};
+
+/* Responses are adopted, not assigned. Guarding here keeps an error body or a
+   stale in-flight response from wedging every render that follows. */
+var loadSeq = 0;
+
+/**
+ * Adopts a server payload as the new state, but only when it actually is one.
+ * A 500 answers with `{error}`, and assigning that would leave `state.project`
+ * undefined and render() throwing until the page is reloaded.
+ *
+ * Adopting also invalidates every `/api/state` request still in flight: they
+ * were computed before this payload, and applying one afterwards would snap
+ * the interface back in time.
+ */
+function adoptState(s) {
+  if (s && s.project) {
+    state = s;
+    loadSeq++;
+    capDocCache = {};
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Drops everything cached under a change name. Change names are only unique
+ * within a project, so on a project switch a surviving cache would show one
+ * project's history and validation against another project's change.
+ */
+function forgetProjectCaches() {
+  historyByChange = null;
+  taskHistory = {};
+  dispatched = {};
+  groupOverrides = {};
+  activeTab = {};
+  activeCapability = {};
+  validation = {};
+  capDocument = {};
+  capDocCache = {};
+}
 
 function toast(message, isError) {
   var host = document.getElementById('toast');
@@ -291,6 +339,10 @@ function render() {
   }
 
   if (!res.ok) {
+    // A pending open only makes sense against the root it was aimed at. If
+    // that root failed to load, forgetting the request beats surprising the
+    // user by jumping to a same-named change in some later project.
+    pendingOpen = null;
     clearProjectActions();
     document.getElementById('pname').textContent = '';
     document.getElementById('counts').textContent = '';
@@ -515,7 +567,7 @@ function renderSyncBar() {
         return r.json();
       })
       .then(function (res) {
-        state = res.state;
+        adoptState(res.state);
         if (!res.ok) toast(res.message || 'Could not reach the remote.', true);
         render();
       })
@@ -686,9 +738,17 @@ function card(c) {
       if (zone) zone.hidden = true;
     };
   } else if (c.location !== 'archived') {
-    // Teach once, rather than letting a dead drag feel broken.
-    n.onmousedown = function () {
+    // Teach once, rather than letting a dead drag feel broken. The card is
+    // draggable purely so the attempt is observable; the drag itself is
+    // cancelled and answered with the explanation.
+    n.draggable = true;
+    n.ondragstart = function (e) {
+      e.preventDefault();
+      if (dragHint) return;
       dragHint = c.lane;
+      toast(
+        'Lanes come from your files, so cards cannot be moved between them. A done change can be dragged to archive it.',
+      );
     };
   }
 
@@ -709,6 +769,8 @@ function card(c) {
 }
 
 function loadHistory(change) {
+  // Same sentinel story as loadTaskHistory: one fetch out at a time.
+  historyByChange = 'loading';
   fetch('/api/history')
     .then(function (r) {
       return r.json();
@@ -723,7 +785,10 @@ function loadHistory(change) {
 }
 
 function loadTaskHistory(change) {
-  taskHistory[change.name] = undefined;
+  // The panel repaints on every watcher event, and each of these is a git
+  // subprocess on the server. The sentinel keeps a repaint from starting a
+  // second fetch while the first is still out.
+  taskHistory[change.name] = 'loading';
   fetch('/api/history/tasks?change=' + encodeURIComponent(change.name))
     .then(function (r) {
       return r.json();
@@ -821,7 +886,7 @@ function openArchive(change) {
             return r.json();
           })
           .then(function (res) {
-            state = res.state;
+            adoptState(res.state);
             host.innerHTML = '';
             selected = null;
             if (res.ok) toast(res.message);
@@ -1109,7 +1174,7 @@ function renderSettings() {
           return r.json();
         })
         .then(function (s) {
-          state = s;
+          adoptState(s);
           toast('Cleared. specdeck will ask again.');
           render();
         });
@@ -1143,7 +1208,7 @@ function renderSettings() {
           return r.json();
         })
         .then(function (s) {
-          state = s;
+          adoptState(s);
           render();
         });
     };
@@ -1186,7 +1251,7 @@ function chooseEditorPreference() {
             return r.json();
           })
           .then(function (s) {
-            state = s;
+            adoptState(s);
             host.innerHTML = '';
             toast('Documents will open in ' + label + '.');
             render();
@@ -1280,11 +1345,18 @@ function openProject(path) {
       return r.json();
     })
     .then(function (s) {
-      state = s;
+      if (!adoptState(s)) {
+        toast((s && (s.message || s.error)) || 'Could not open that project.', true);
+        return;
+      }
+      forgetProjectCaches();
       selected = null;
       initSelection = null;
       view = 'board';
       render();
+    })
+    .catch(function () {
+      toast('Could not reach specdeck.', true);
     });
 }
 
@@ -1311,8 +1383,8 @@ function pickFolder(button) {
     .then(function (res) {
       button.disabled = false;
       button.textContent = original;
-      if (res.ok && res.state) {
-        state = res.state;
+      if (res.ok && adoptState(res.state)) {
+        forgetProjectCaches();
         selected = null;
         initSelection = null;
         overviews = null;
@@ -1771,7 +1843,7 @@ function projectCard(o, index, shown) {
         return r.json();
       })
       .then(function (s) {
-        state = s;
+        adoptState(s);
         overviews = overviews.filter(function (x) {
           return x.path !== o.path;
         });
@@ -1966,7 +2038,7 @@ function renderSetup(failure) {
         return r.json();
       })
       .then(function (res) {
-        state = res.state;
+        adoptState(res.state);
         if (res.ok) {
           initSelection = null;
           toast(res.message);
@@ -2111,7 +2183,7 @@ function openPull(g) {
         return r.json();
       })
       .then(function (res) {
-        state = res.state;
+        adoptState(res.state);
         host.innerHTML = '';
         if (res.ok) toast(res.message || 'Pulled.');
         else showPullFailure(res);
@@ -2213,20 +2285,33 @@ function renderSpecs(snap, needle) {
 
     if (capDocument[cap.id]) {
       var doc = el('div', 'fdoc');
-      doc.appendChild(el('div', 'muted', 'Loading…'));
       box.appendChild(doc);
-      fetch('/api/artifact?path=' + encodeURIComponent(cap.path))
-        .then(function (r) {
-          return r.json();
-        })
-        .then(function (result) {
-          doc.innerHTML = result.ok
-            ? renderMarkdown(result.artifact.text)
-            : esc(result.message || 'That file could not be read.');
-        })
-        .catch(function () {
-          doc.textContent = 'Could not reach specdeck.';
-        });
+      var cached = capDocCache[cap.path];
+      if (cached && cached !== 'loading') {
+        doc.innerHTML = cached.html;
+        host.appendChild(box);
+        return;
+      }
+      doc.appendChild(el('div', 'muted', 'Loading…'));
+      if (cached !== 'loading') {
+        capDocCache[cap.path] = 'loading';
+        fetch('/api/artifact?path=' + encodeURIComponent(cap.path))
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (result) {
+            capDocCache[cap.path] = {
+              html: result.ok
+                ? renderMarkdown(result.artifact.text)
+                : esc(result.message || 'That file could not be read.'),
+            };
+            if (view === 'specs') render();
+          })
+          .catch(function () {
+            capDocCache[cap.path] = { html: esc('Could not reach specdeck.') };
+            if (view === 'specs') render();
+          });
+      }
       host.appendChild(box);
       return;
     }
@@ -2405,7 +2490,7 @@ function openHandoff(change, verb) {
           return r.json();
         })
         .then(function (s) {
-          state = s;
+          adoptState(s);
           openHandoff(change, verb);
         });
     };
@@ -2719,9 +2804,9 @@ function openPanel(c) {
     var entry =
       historyByChange && historyByChange.changes ? historyByChange.changes[c.name] : undefined;
 
-    if (historyByChange === null) {
+    if (historyByChange === null || historyByChange === 'loading') {
       body.appendChild(el('div', 'empty', 'Reading git history...'));
-      loadHistory(c);
+      if (historyByChange === null) loadHistory(c);
     } else if (!historyByChange.available) {
       body.appendChild(
         el('div', 'muted', esc(historyByChange.reason || 'Git history is unavailable.')),
@@ -2788,9 +2873,9 @@ function openPanel(c) {
 
     body.appendChild(el('h3', null, 'Task completions'));
     var events = taskHistory[c.name];
-    if (events === undefined) {
+    if (events === undefined || events === 'loading') {
       body.appendChild(el('div', 'empty', 'Reading task history...'));
-      loadTaskHistory(c);
+      if (events === undefined) loadTaskHistory(c);
     } else if (!events.available) {
       body.appendChild(el('div', 'muted', esc(events.reason || 'No task history available.')));
     } else if (!events.events.length) {
@@ -3003,6 +3088,9 @@ function closePanel() {
   // Closing is the easiest way to lose an edit by accident, so it asks first.
   if (selected && hasUnsavedEdit(selected)) {
     if (!window.confirm('You have unsaved changes. Discard them?')) return;
+    // The user just agreed to discard, so actually discard: otherwise the
+    // draft resurfaces the next time this change's panel is opened.
+    discardEdit(selected);
   }
   // The editor holds a live CodeMirror view. Dropping the panel's HTML without
   // tearing it down first leaks it and its listeners.
@@ -3114,8 +3202,17 @@ function renderList() {
 
   var rows = applySort(applyFilters(all, listPrefs), listPrefs);
 
+  // The header filter box is visible in every view, so it has to mean the
+  // same thing here as on the board: a name filter.
+  if (filterText) {
+    var needle = filterText.toLowerCase();
+    rows = rows.filter(function (r) {
+      return r.name.toLowerCase().indexOf(needle) !== -1;
+    });
+  }
+
   if (!rows.length) {
-    if (isFiltered(listPrefs) || (!listPrefs.archived && all.length)) {
+    if (filterText || isFiltered(listPrefs) || (!listPrefs.archived && all.length)) {
       // A list emptied by its own filters must say so, or it reads as a project
       // with nothing in it.
       var none = el('div', 'empty');
@@ -3131,6 +3228,8 @@ function renderList() {
           archived: false,
         });
         savePreferences(listPrefs);
+        filterText = '';
+        document.getElementById('filter').value = '';
         render();
       };
       none.appendChild(clear);
@@ -3629,7 +3728,7 @@ function approvalBox(c) {
 function openApprove(c) {
   var modal = document.getElementById('modal');
   modal.innerHTML = '';
-  var back = el('div', 'back');
+  var back = el('div', 'modal');
   var sheet = el('div', 'sheet');
   sheet.appendChild(el('h3', null, 'Approve ' + esc(c.name)));
   sheet.appendChild(el('div', 'muted', 'Reading what this would cover...'));
@@ -3804,16 +3903,25 @@ function tick() {
 }
 
 function load() {
+  var seq = ++loadSeq;
   fetch('/api/state')
     .then(function (r) {
       return r.json();
     })
     .then(function (s) {
-      state = s;
+      // A response that was overtaken - by a newer load or by a project
+      // switch - describes a moment that has already passed. Applying it
+      // would revert the interface, so it is dropped instead.
+      if (seq !== loadSeq) return;
+      if (!adoptState(s)) return;
       render();
       // Approval is a git log per change, so it is fetched after the board has
       // already painted rather than holding it up.
       loadApprovals();
+    })
+    .catch(function () {
+      // The next SSE event retries this on its own; a toast per dropped
+      // connection during a server restart would just be noise.
     });
 }
 
@@ -3895,12 +4003,6 @@ document.addEventListener('drop', function (e) {
     render();
   }
 });
-document.addEventListener('mouseup', function () {
-  if (dragHint) {
-    dragHint = null;
-  }
-});
-
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     var modal = document.getElementById('modal');
