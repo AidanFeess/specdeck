@@ -1,5 +1,4 @@
 import type { FileSource } from '../fs/source.js';
-import { walkFiles } from '../fs/source.js';
 import { joinPath } from '../fs/pathutil.js';
 
 /**
@@ -37,6 +36,7 @@ export interface KnownTool {
  * exactly why it is the one that gets polished.
  */
 export const KNOWN_TOOLS: KnownTool[] = [
+  { id: 'codex', label: 'Codex', configDir: '.codex', skillsDir: '.codex/skills' },
   {
     id: 'claude',
     label: 'Claude Code',
@@ -136,8 +136,44 @@ export interface DetectedHarness {
   note?: string;
 }
 
-const OPENSPEC_SKILL = /(?:^|\/)openspec-[a-z-]+\/SKILL\.md$/i;
 const OPSX_COMMAND = /(?:^|\/)(?:opsx[:-])?([a-z-]+)\.(?:md|toml|prompt\.md)$/i;
+
+export const WORKFLOW_SKILLS: Record<string, string> = {
+  propose: 'openspec-propose',
+  explore: 'openspec-explore',
+  apply: 'openspec-apply-change',
+  archive: 'openspec-archive-change',
+  verify: 'openspec-verify-change',
+  sync: 'openspec-sync-specs',
+  update: 'openspec-update-change',
+  new: 'openspec-new-change',
+  continue: 'openspec-continue-change',
+  ff: 'openspec-ff-change',
+  'bulk-archive': 'openspec-bulk-archive-change',
+  onboard: 'openspec-onboard',
+};
+
+export interface SkillRoot {
+  path: string;
+  label: string;
+  toolId?: string;
+}
+
+async function readSkills(source: FileSource, root: string): Promise<string[]> {
+  const found: string[] = [];
+  // Explicit paths also work through installer-created directory links. Never
+  // recursively follow arbitrary links in a managed project.
+  for (const skill of Object.values(WORKFLOW_SKILLS)) {
+    if ((await source.readText(joinPath(root, skill, 'SKILL.md'))) !== undefined) found.push(skill);
+  }
+  return found;
+}
+
+function skillCommand(skill: string, toolId: string): string {
+  if (toolId === 'codex') return `$${skill}`;
+  if (toolId === 'claude') return `/${skill}`;
+  return `Use the ${skill} skill for change`;
+}
 
 /**
  * Detects one tool's state from files inside the project.
@@ -155,13 +191,10 @@ async function detectTool(
   const commands: string[] = [];
 
   if (tool.skillsDir !== undefined) {
-    const skills = await walkFiles(source, joinPath(projectRoot, ...tool.skillsDir.split('/')), {
-      maxDepth: 2,
-    });
-    for (const file of skills) {
-      if (OPENSPEC_SKILL.test(file.relativePath)) {
-        evidence.push(`${tool.skillsDir}/${file.relativePath}`);
-      }
+    const skills = await readSkills(source, joinPath(projectRoot, ...tool.skillsDir.split('/')));
+    for (const skill of skills) {
+      evidence.push(`${tool.skillsDir}/${skill}/SKILL.md`);
+      commands.push(skillCommand(skill, tool.id));
     }
   }
 
@@ -171,14 +204,26 @@ async function detectTool(
       if (entry.kind !== 'file') continue;
       const match = OPSX_COMMAND.exec(entry.name);
       const verb = match?.[1];
-      if (verb === undefined) continue;
+      if (verb === undefined || !(verb in WORKFLOW_SKILLS)) continue;
+      if (
+        !tool.commandsDir.endsWith('/opsx') &&
+        !entry.name.startsWith('opsx-') &&
+        !entry.name.startsWith('opsx:')
+      )
+        continue;
       evidence.push(`${tool.commandsDir}/${entry.name}`);
       commands.push(tool.slash === 'colon' ? `/opsx:${verb}` : `/opsx-${verb}`);
     }
   }
 
   if (evidence.length > 0) {
-    return { id: tool.id, label: tool.label, state: 'configured', evidence, commands: commands.sort() };
+    return {
+      id: tool.id,
+      label: tool.label,
+      state: 'configured',
+      evidence,
+      commands: commands.sort(),
+    };
   }
 
   const configured = await source.list(joinPath(projectRoot, ...tool.configDir.split('/')));
@@ -194,12 +239,45 @@ async function detectTool(
 export async function detectHarnesses(
   source: FileSource,
   projectRoot: string,
+  globalRoots: SkillRoot[] = [],
 ): Promise<DetectedHarness[]> {
   const results = await Promise.all(
     KNOWN_TOOLS.map((tool) => detectTool(source, projectRoot, tool)),
   );
 
-  const undetectable: DetectedHarness[] = UNDETECTABLE_TOOLS.map((tool) => ({
+  const roots: SkillRoot[] = [
+    { path: joinPath(projectRoot, '.agents', 'skills'), label: 'Shared project skills' },
+    ...globalRoots,
+  ];
+  for (const [index, root] of roots.entries()) {
+    const skills = await readSkills(source, root.path);
+    if (!skills.length) continue;
+    const id = root.toolId ?? `shared-skills-${index}`;
+    const existing = root.toolId ? results.find((r) => r.id === id) : undefined;
+    const evidence = skills.map((s) => joinPath(root.path, s, 'SKILL.md'));
+    const commands = skills.map((s) => skillCommand(s, id));
+    if (existing) {
+      existing.note =
+        existing.state === 'configured'
+          ? 'Project and global installations are available.'
+          : root.label;
+      existing.state = 'configured';
+      existing.evidence.push(...evidence);
+      existing.commands.push(...commands);
+    } else
+      results.push({
+        id,
+        label: root.label,
+        state: 'configured',
+        evidence,
+        commands,
+        note: root.label,
+      });
+  }
+
+  const undetectable: DetectedHarness[] = UNDETECTABLE_TOOLS.filter(
+    (tool) => !results.some((r) => r.id === tool.id && r.state !== 'absent'),
+  ).map((tool) => ({
     id: tool.id,
     label: tool.label,
     state: 'undetectable' as const,
@@ -212,6 +290,7 @@ export async function detectHarnesses(
 }
 
 export interface HandoffPayload {
+  harnessId?: string;
   /** The single line handed to whichever agent the user is using. */
   text: string;
   /** The generated slash command, when the detected tool has one. */
@@ -236,14 +315,25 @@ export function buildHandoff(
     `Work on the OpenSpec change "${changeName}": run ` +
     `openspec status --change ${changeName} --json, then follow the ${verb} workflow.`;
 
-  const configured = harnesses.find((harness) => harness.state === 'configured');
-  const command = configured?.commands.find((entry) => entry.includes(verb));
+  const candidates = harnesses.filter((harness) => harness.state === 'configured');
+  const matches = (entry: string): boolean =>
+    entry === `/opsx:${verb}` ||
+    entry === `/opsx-${verb}` ||
+    (WORKFLOW_SKILLS[verb] !== undefined &&
+      [
+        `/${WORKFLOW_SKILLS[verb]}`,
+        `$${WORKFLOW_SKILLS[verb]}`,
+        `Use the ${WORKFLOW_SKILLS[verb]} skill for change`,
+      ].includes(entry));
+  const configured = candidates.find((h) => h.commands.some(matches)) ?? candidates[0];
+  const command = configured?.commands.find(matches);
 
   if (command !== undefined && configured !== undefined) {
     return {
       text,
+      harnessId: configured.id,
       command: `${command} ${changeName}`,
-      note: `${configured.label} has this workflow. Run the command in your session.`,
+      note: `${configured.label} has this workflow. ${configured.note ?? 'Project installation.'} Paste this into your session.`,
       delivery: 'clipboard',
     };
   }
@@ -251,6 +341,7 @@ export function buildHandoff(
   if (configured !== undefined) {
     return {
       text,
+      harnessId: configured.id,
       note: `${configured.label} is set up for OpenSpec, but has no generated "${verb}" command. Paste this instead.`,
       delivery: 'clipboard',
     };

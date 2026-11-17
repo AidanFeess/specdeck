@@ -243,15 +243,13 @@ describe('specdeck never commits unless asked', () => {
 });
 
 describe('listInitTools', () => {
-  it('lists the tools OpenSpec can configure and flags home-directory writers', async () => {
+  it('lists supported tools and keeps initialization project-scoped', async () => {
     const tools = await listInitTools(new MemoryFileSource({}), '/nowhere');
     expect(tools.length).toBeGreaterThan(20);
     expect(tools.some((t) => t.id === 'claude')).toBe(true);
 
-    // Codex resolves its command directory from the user's home rather than the
-    // project, so initializing for it reaches outside the folder being set up.
-    // That has to stay disclosed.
-    expect(tools.find((t) => t.id === 'codex')?.writesOutsideProject).toBe(true);
+    // OpenSpec 2 supports explicit project-scoped skills for every tool.
+    expect(tools.find((t) => t.id === 'codex')?.writesOutsideProject).toBe(false);
     expect(tools.find((t) => t.id === 'claude')?.writesOutsideProject).toBe(false);
   });
 

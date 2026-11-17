@@ -30,6 +30,31 @@ const CUSTOM_SCHEMA: WorkflowSchema = {
 };
 
 describe('deriving artifacts from an unfamiliar schema', () => {
+  it('satisfies dependencies on skipped spec outputs without marking them written', () => {
+    const schema: WorkflowSchema = {
+      ...CUSTOM_SCHEMA,
+      artifacts: [
+        { id: 'specs', generates: 'specs/**/*.md', description: '', requires: [] },
+        { id: 'tasks', generates: 'tasks.md', description: '', requires: ['specs'] },
+      ],
+    };
+    const artifacts = deriveArtifacts({
+      schema,
+      presentPaths: [],
+      changeRoot: '/p/change',
+      skipSpecs: true,
+    });
+    expect(artifacts[0]).toMatchObject({ status: 'skipped', existingPaths: [] });
+    expect(artifacts[1]).toMatchObject({ status: 'ready', missingDeps: [] });
+    expect(
+      deriveArtifacts({
+        schema,
+        presentPaths: ['specs/auth/spec.md'],
+        changeRoot: '/p/change',
+        skipSpecs: true,
+      })[0]?.status,
+    ).toBe('done');
+  });
   it('reports every declared artifact, not a fixed four', () => {
     const artifacts = deriveArtifacts({
       schema: CUSTOM_SCHEMA,

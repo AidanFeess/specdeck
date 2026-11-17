@@ -97,6 +97,22 @@ change's directory (whatever else you had staged is left alone). Because the sta
 in git, it survives a clone and shows up for teammates when they pull. If any artifact is
 edited afterwards, the change goes back to "needs review" and names the files that moved.
 
+### Behavior review
+
+Open a change's **Review** tab to compare current and proposed requirement text and
+scenarios. Added, changed, and removed scenarios are called out; unchanged scenarios
+collapse. Expand **Resulting capability** to read the requirements after applying the
+delta, including untouched requirements.
+
+The preview uses current specs on disk. Missing targets, duplicate names, and malformed
+deltas explain why a preview cannot be produced. Archived changes are not replayed
+against today's specs. This is a structural comparison, not proof of correctness or test
+coverage.
+
+**Since last approval** compares Markdown, YAML, JSON, and text artifacts with the latest
+approval commit, including additions and deletions. Comparisons are read-only and are
+limited to 4 MB of text; larger changes can be inspected with git.
+
 ### List view
 
 <picture>
@@ -127,25 +143,28 @@ changes currently modifying it.
 
 Every project you've opened, with lane breakdown, task totals, sync state, and last
 commit. Star projects, drag them into an order you like, or sort by name, activity, or
-remaining work. OpenSpec's workspaces and context stores appear here too, with health
-from `openspec workspace doctor` and `openspec context-store doctor`.
+remaining work. OpenSpec's stores and personal worksets appear here too. Store health
+comes from `openspec store doctor`; worksets list their member folders without claiming
+those folders have been checked.
 
 ### OpenSpec commands
 
-Create a change, validate one, refresh instruction files, link an initiative, archive.
+Create a change, validate one, refresh instruction files, archive.
 Each button runs the real `openspec` command, and when one fails you see the command, the
 exit status, and its output.
 
 ### Handoff to your agent
 
-specdeck detects which AI tools your project has OpenSpec wired into and hands work off
-using the command OpenSpec generated. Depending on the tool it can open a terminal, open
+specdeck detects legacy commands, tool-specific skills, shared `.agents/skills`, and
+known global shared, Claude Code, and Codex skill roots. It identifies the installation
+source and hands work off using the exact available workflow. Shared skills do not imply
+that a particular agent is installed. Depending on the tool it can open a terminal, open
 an existing session, or copy the prompt, and it tells you which one it did.
 
 ### Setup for new projects
 
 Point specdeck at a folder with no `openspec/` directory and it offers to run
-`openspec init`, with a tool picker and the exact command displayed next to the button in
+`openspec init --scope project`, with a tool picker and the exact command displayed next to the button in
 case you'd rather run it yourself.
 
 ## Design principles
@@ -177,7 +196,7 @@ These explain most of the product's behavior:
   derived from git; discussion belongs in a forge.
 - Merge conflicting edits. A save whose base has moved is refused, and overwriting is an
   explicit choice.
-- Register, modify, or remove OpenSpec's workspaces and context stores. It reads them;
+- Register, modify, or remove OpenSpec's stores and worksets. It reads them;
   OpenSpec owns them.
 - Pull anything but a fast-forward. If both your branch and the remote have moved,
   specdeck stops and says so instead of creating a merge commit.
@@ -186,11 +205,12 @@ These explain most of the product's behavior:
 
 ## Supported AI tools
 
-Detected from the files `openspec init` generates: Claude Code, Cursor, Windsurf,
-opencode, Gemini CLI, GitHub Copilot, Kilo Code, and Roo Code.
-
-Codex keeps its commands in your home folder rather than the project, so there is nothing
-in the repository to detect; specdeck reports it as undetectable rather than absent.
+Detected from legacy commands or tool-specific skills: Claude Code, Codex, Cursor,
+Windsurf, opencode, Gemini CLI, GitHub Copilot, Kilo Code, and Roo Code. Current OpenSpec
+shared project skills are also detected without attributing them to a specific agent.
+Global shared skills are read from `~/.agents/skills`, Claude Code from `~/.claude/skills`,
+and Codex from `$CODEX_HOME/skills` (defaulting to `~/.codex/skills`). Legacy Codex commands
+outside these inspected roots remain undetectable.
 
 Other tools still work. Handoff falls back to copying the prompt, which works everywhere.
 
@@ -209,8 +229,13 @@ affiliation or endorsement is implied.
   records agreement rather than enforcing it. For enforcement, use branch protection on
   your forge.
 - `Update instruction files` runs `openspec update`, which also rewrites OpenSpec's
-  global configuration. It sits behind a confirmation for that reason and never runs as
-  part of reading a project.
+  configuration and replaces built-in skills, including local customizations. It can
+  refresh global skills. It sits behind a confirmation and never runs while reading.
+- This version bundles OpenSpec 2.1.0. Legacy artifact trees and commands remain readable,
+  but the retired built-in `workspace-planning` schema needs a project-local replacement
+  or migration. Initiative metadata is still readable; creating initiative links is no
+  longer offered because OpenSpec 2 removed that command. Managed projects are never
+  automatically migrated.
 - Handoff can only open a terminal or agent session for tools it knows how to start;
   anything else falls back to copying the prompt, and the UI says which method was used.
 - Attaching to a session opens it with the prompt on your clipboard. There's no reliable

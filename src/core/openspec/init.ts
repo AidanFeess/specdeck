@@ -1,4 +1,6 @@
-import { getWorkspaceSkillCapableTools } from '@fission-ai/openspec';
+import { KNOWN_TOOLS } from './harness.js';
+import { pathToFileURL } from 'node:url';
+import { findBundledOpenSpecRoot } from './installed.js';
 
 import { openspecCommand, runOpenspec } from './run.js';
 import { joinPath } from '../fs/pathutil.js';
@@ -19,45 +21,40 @@ export interface InitTool {
   label: string;
   /** Project-relative directory the tool's files go into. */
   skillsDir?: string;
-  /**
-   * True when this tool writes outside the project directory.
-   *
-   * Codex resolves its command directory from CODEX_HOME (defaulting to the
-   * user's home directory), so initializing for it touches files well outside
-   * the folder the user pointed at. That has to be disclosed before it runs,
-   * not discovered afterwards.
-   */
+  /** Project-scoped initialization does not install skills in the user's home. */
   writesOutsideProject: boolean;
   /** True when files for this tool already exist in the project. */
   detected: boolean;
 }
 
-const WRITES_OUTSIDE_PROJECT = new Set(['codex']);
+const WRITES_OUTSIDE_PROJECT = new Set<string>();
 
 interface RegistryEntry {
   value?: unknown;
   name?: unknown;
   skillsDir?: unknown;
+  detectionPaths?: unknown;
+  available?: unknown;
 }
 
-/**
- * Lists the tools OpenSpec can configure, preselecting any already present.
- *
- * The registry comes from the OpenSpec package. If that export ever disappears,
- * a small fallback keeps initialization usable rather than failing outright,
- * because a missing picker should not block the one feature that gets a project
- * started.
- */
+/** Lists the pinned CLI's tool registry, preselecting tool-specific project files. */
 export async function listInitTools(source: FileSource, projectRoot: string): Promise<InitTool[]> {
-  let entries: RegistryEntry[];
-  try {
-    entries = getWorkspaceSkillCapableTools();
-  } catch {
-    entries = [
-      { value: 'claude', name: 'Claude Code', skillsDir: '.claude' },
-      { value: 'cursor', name: 'Cursor', skillsDir: '.cursor' },
-      { value: 'codex', name: 'Codex', skillsDir: '.codex' },
-    ];
+  // OpenSpec 2 no longer exports its tool registry. Offer the adapters covered
+  // by our real init drift check, plus its universal shared-skills target.
+  let entries: RegistryEntry[] = [
+    ...KNOWN_TOOLS.map((tool) => ({ value: tool.id, name: tool.label, skillsDir: tool.configDir })),
+    { value: 'agents', name: 'Other / shared skills', skillsDir: '.agents' },
+  ];
+  const packageRoot = findBundledOpenSpecRoot();
+  if (packageRoot) {
+    // Private, pinned compatibility seam: checked by integration tests. Avoid
+    // a static import of the removed 1.x export, which prevents startup entirely.
+    const registry = (await import(
+      pathToFileURL(joinPath(packageRoot, 'dist', 'core', 'config.js')).href
+    )) as { AI_TOOLS?: RegistryEntry[] };
+    if (!Array.isArray(registry.AI_TOOLS))
+      throw new Error('The bundled OpenSpec tool registry is unreadable.');
+    entries = registry.AI_TOOLS.filter((entry: RegistryEntry) => entry.available !== false);
   }
 
   const tools: InitTool[] = [];
@@ -66,9 +63,18 @@ export async function listInitTools(source: FileSource, projectRoot: string): Pr
     if (id === undefined) continue;
 
     const skillsDir = typeof entry.skillsDir === 'string' ? entry.skillsDir : undefined;
-    const detected =
-      skillsDir !== undefined &&
-      (await source.list(joinPath(projectRoot, ...skillsDir.split('/')))) !== undefined;
+    const detectionPaths = Array.isArray(entry.detectionPaths)
+      ? entry.detectionPaths.filter(
+          (p): p is string => typeof p === 'string' && !p.startsWith('.agents'),
+        )
+      : skillsDir
+        ? [skillsDir]
+        : [];
+    const detected = (
+      await Promise.all(
+        detectionPaths.map((p) => source.list(joinPath(projectRoot, ...p.split('/')))),
+      )
+    ).some((entries) => entries !== undefined);
 
     const tool: InitTool = {
       id,
@@ -89,7 +95,14 @@ export async function listInitTools(source: FileSource, projectRoot: string): Pr
 function initArgs(toolIds: string[]): string[] {
   // Tools are always passed explicitly, because the command is interactive
   // without them and would wait for input that cannot arrive.
-  return ['init', '.', '--tools', toolIds.length > 0 ? toolIds.join(',') : 'none'];
+  return [
+    'init',
+    '.',
+    '--scope',
+    'project',
+    '--tools',
+    toolIds.length > 0 ? toolIds.join(',') : 'none',
+  ];
 }
 
 /** The exact command specdeck would run, for the user to copy and run instead. */
@@ -123,8 +136,8 @@ export async function runInit(projectRoot: string, toolIds: string[]): Promise<I
     output: result.output,
     message: result.ok
       ? 'OpenSpec is set up in this folder.'
-      : (result.failure === 'missing-openspec' && result.message !== undefined
-          ? result.message
-          : 'Initialization did not complete. You can run the command yourself instead.'),
+      : result.failure === 'missing-openspec' && result.message !== undefined
+        ? result.message
+        : 'Initialization did not complete. You can run the command yourself instead.',
   };
 }

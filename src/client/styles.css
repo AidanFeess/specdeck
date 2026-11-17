@@ -1784,3 +1784,52 @@ button.task.busy {
 .pactions:empty {
   display: none;
 }
+/* Review expands only the detail panel and stacks comparisons on small screens. */
+aside.review-panel {
+  width: min(960px, 90vw);
+}
+.review-capability {
+  margin: 20px 0;
+}
+.review-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.review-version {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+.review-version h4 {
+  margin: 0 0 12px;
+}
+.review-version pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.review-disclosure {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.review-disclosure summary {
+  cursor: pointer;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.review-disclosure[open] > summary {
+  margin-bottom: 12px;
+}
+.review-warning {
+  font-weight: 600;
+}
+@media (max-width: 700px) {
+  .review-pair {
+    grid-template-columns: 1fr;
+  }
+  aside.review-panel {
+    width: 100vw;
+  }
+}

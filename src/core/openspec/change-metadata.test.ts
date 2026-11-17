@@ -6,6 +6,14 @@ import { parseArchivedDirName } from './paths.js';
 const PATH = '/repo/openspec/changes/add-auth/.openspec.yaml';
 
 describe('parseChangeMetadata', () => {
+  it('reads a boolean skip_specs and flags string values', () => {
+    expect(
+      parseChangeMetadata('schema: spec-driven\nskip_specs: true', PATH, 'x').metadata.skipSpecs,
+    ).toBe(true);
+    const malformed = parseChangeMetadata('schema: spec-driven\nskip_specs: "true"', PATH, 'x');
+    expect(malformed.metadata.skipSpecs).toBeUndefined();
+    expect(malformed.issues[0]?.message).toContain('boolean');
+  });
   it('reads what "openspec new change" actually writes', () => {
     const { metadata, issues } = parseChangeMetadata(
       'schema: spec-driven\ncreated: 2026-08-14\n',
@@ -21,7 +29,11 @@ describe('parseChangeMetadata', () => {
     // YAML resolves an unquoted 2026-08-14 to a Date. OpenSpec records a date,
     // not a time, so widening it would make the timeline claim precision it
     // does not have.
-    const { metadata } = parseChangeMetadata('schema: spec-driven\ncreated: 2026-08-14\n', PATH, 'x');
+    const { metadata } = parseChangeMetadata(
+      'schema: spec-driven\ncreated: 2026-08-14\n',
+      PATH,
+      'x',
+    );
     expect(metadata.created).toBe('2026-08-14');
   });
 

@@ -38,6 +38,7 @@ export interface ArtifactInput {
   presentPaths: string[];
   /** Absolute path of the change root, used to build absolute artifact paths. */
   changeRoot: string;
+  skipSpecs?: boolean;
 }
 
 function absolute(changeRoot: string, relative: string): string {
@@ -66,13 +67,20 @@ export function deriveArtifacts(input: ArtifactInput): Artifact[] {
   const done = new Set(
     schema.artifacts.filter((a) => (matches.get(a.id)?.length ?? 0) > 0).map((a) => a.id),
   );
+  const skipped = new Set(
+    schema.artifacts
+      .filter((a) => input.skipSpecs && a.generates.startsWith('specs/') && !done.has(a.id))
+      .map((a) => a.id),
+  );
+  for (const id of skipped) done.add(id);
 
   return schema.artifacts.map((artifact) => {
     const existing = matches.get(artifact.id) ?? [];
     const missingDeps = artifact.requires.filter((dep) => !done.has(dep));
 
     let status: ArtifactStatus;
-    if (existing.length > 0) status = 'done';
+    if (skipped.has(artifact.id)) status = 'skipped';
+    else if (existing.length > 0) status = 'done';
     else if (missingDeps.length > 0) status = 'blocked';
     else status = 'ready';
 
@@ -106,7 +114,7 @@ export function deriveLane(input: LaneInput): Lane {
   if (location === 'archived') return 'archived';
 
   const byId = new Map(artifacts.map((a) => [a.id, a]));
-  const isDone = (id: string): boolean => byId.get(id)?.status === 'done';
+  const isDone = (id: string): boolean => ['done', 'skipped'].includes(byId.get(id)?.status ?? '');
 
   const tracked = trackedArtifact(schema);
 
@@ -127,7 +135,7 @@ export function deriveLane(input: LaneInput): Lane {
 
   // No tracked artifact at all: fall back to whether the whole schema is written.
   if (tracked === undefined) {
-    return artifacts.every((a) => a.status === 'done') ? 'done' : 'proposed';
+    return artifacts.every((a) => isDone(a.id)) ? 'done' : 'proposed';
   }
 
   return 'proposed';

@@ -110,7 +110,13 @@ export function runOpenspec(
         maxBuffer: MAX_OUTPUT_BYTES,
         windowsHide: true,
         // Colour codes would reach the browser as escape sequences.
-        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+        env: {
+          ...process.env,
+          NO_COLOR: '1',
+          FORCE_COLOR: '0',
+          OPENSPEC_TELEMETRY: '0',
+          OPENSPEC_NO_UPDATE_CHECK: '1',
+        },
       },
       (error, stdout, stderr) => {
         const output = `${stdout}${stderr}`.trim();

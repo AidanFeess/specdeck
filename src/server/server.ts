@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { resolve, sep } from 'node:path';
+import { homedir } from 'node:os';
 
 import { localFileSource } from '../core/fs/node-source.js';
 import {
@@ -17,6 +18,8 @@ import {
 import { readProject } from '../core/read/project.js';
 import { checkBundledOpenSpec } from '../core/openspec/installed.js';
 import { specdeckVersion } from '../core/version.js';
+import { compareCapability } from '../core/review/compare.js';
+import { reviewApproval } from '../core/review/approval.js';
 import { detectHarnesses } from '../core/openspec/harness.js';
 import { listInitTools, runInit, type InitTool } from '../core/openspec/init.js';
 import { toggleTask } from '../core/write/toggle-task.js';
@@ -160,7 +163,19 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     const config = await readConfig();
     const [project, harnesses, sync] = await Promise.all([
       readProject(localFileSource, activeProject),
-      detectHarnesses(localFileSource, activeProject),
+      detectHarnesses(localFileSource, activeProject, [
+        { path: resolve(homedir(), '.agents/skills'), label: 'Global shared skills' },
+        {
+          path: resolve(homedir(), '.claude/skills'),
+          label: 'Global Claude Code skills',
+          toolId: 'claude',
+        },
+        {
+          path: resolve(process.env.CODEX_HOME || resolve(homedir(), '.codex'), 'skills'),
+          label: 'Global Codex skills',
+          toolId: 'codex',
+        },
+      ]),
       computeSync(activeProject),
     ]);
 
@@ -417,6 +432,35 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
         json(response, 200, {
           approvals: Object.fromEntries(entries),
           checkedAt: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (path === '/api/review' && request.method === 'GET') {
+        const project = await readProject(localFileSource, activeProject);
+        const change = project.ok
+          ? project.snapshot.changes.find((c) => c.name === url.searchParams.get('change'))
+          : undefined;
+        if (!project.ok || !change) {
+          json(response, 404, { error: 'No such change in the project that is open.' });
+          return;
+        }
+        json(response, 200, {
+          baseline: 'Current specs on disk',
+          reason:
+            change.location === 'archived'
+              ? 'Archived changes cannot be replayed reliably against current specs. Inspect the original artifacts or git history.'
+              : undefined,
+          capabilities:
+            change.location === 'archived'
+              ? []
+              : change.deltaSpecs.map((delta) =>
+                  compareCapability(
+                    project.snapshot.capabilities.find((c) => c.id === delta.capability),
+                    delta,
+                  ),
+                ),
+          approval: await reviewApproval(resolve(activeProject), change),
         });
         return;
       }

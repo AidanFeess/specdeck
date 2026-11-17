@@ -1,3 +1,4 @@
+import { buildHandoff } from '../core/openspec/harness.ts';
 import {
   renderArtifactsTab,
   closeArtifactEditor,
@@ -17,6 +18,7 @@ import {
 } from './list.js';
 import { renderMarkdown } from './markdown.js';
 import { createEditor } from './editor.js';
+import { loadReview } from './review.js';
 
 var LANES = ['draft', 'proposed', 'specified', 'ready', 'in-progress', 'done', 'archived'];
 var LABELS = {
@@ -586,7 +588,7 @@ function card(c) {
   var bits = [];
   if (c.tasks && c.tasks.total > 0) bits.push(c.tasks.completed + '/' + c.tasks.total + ' tasks');
   var doneCount = (c.artifacts || []).filter(function (a) {
-    return a.status === 'done';
+    return a.status === 'done' || a.status === 'skipped';
   }).length;
   if (c.artifacts && c.artifacts.length)
     bits.push(doneCount + '/' + c.artifacts.length + ' artifacts');
@@ -668,7 +670,7 @@ function card(c) {
   var sent = dispatched[c.name];
   if (sent) {
     var waiting = (c.artifacts || []).filter(function (a) {
-      return a.status !== 'done';
+      return a.status !== 'done' && a.status !== 'skipped';
     })[0];
     var note = el('div', 'flag');
     note.style.color = 'var(--accent)';
@@ -701,7 +703,7 @@ function card(c) {
   if (c.location !== 'archived') {
     var missing = (c.artifacts || [])
       .filter(function (a) {
-        return a.status !== 'done';
+        return a.status !== 'done' && a.status !== 'skipped';
       })
       .map(function (a) {
         return a.id;
@@ -2390,12 +2392,7 @@ function copyPayload(payload) {
    way to push a message into a running conversation. */
 function runDispatch(change, verb, payload, method, sessionId) {
   copyPayload(payload);
-  var harness =
-    (
-      (state.harnesses || []).filter(function (h) {
-        return h.state === 'configured';
-      })[0] || {}
-    ).id || '';
+  var harness = buildHandoff(change.name, verb, state.harnesses || []).harnessId || '';
 
   var body = { harness: harness, method: method };
   if (sessionId) body.session = sessionId;
@@ -2425,37 +2422,9 @@ function runDispatch(change, verb, payload, method, sessionId) {
 }
 
 function openHandoff(change, verb) {
-  var harnesses = (state && state.harnesses) || [];
-  var configured = harnesses.filter(function (h) {
-    return h.state === 'configured';
-  })[0];
-  var command = null;
-  if (configured) {
-    for (var i = 0; i < configured.commands.length; i++) {
-      if (configured.commands[i].indexOf(verb) !== -1) {
-        command = configured.commands[i];
-        break;
-      }
-    }
-  }
-  var payload = command
-    ? command + ' ' + change.name
-    : 'Work on the OpenSpec change "' +
-      change.name +
-      '": run openspec status --change ' +
-      change.name +
-      ' --json, then follow the ' +
-      verb +
-      ' workflow.';
-
-  var note = configured
-    ? command
-      ? configured.label + ' has this workflow. Run the command in your session.'
-      : configured.label +
-        ' is set up for OpenSpec but has no generated "' +
-        verb +
-        '" command. Paste this instead.'
-    : 'No AI tool is wired into OpenSpec here. Paste this into whichever agent you use.';
+  var handoff = buildHandoff(change.name, verb, (state && state.harnesses) || []);
+  var payload = handoff.command || handoff.text;
+  var note = handoff.note;
 
   var host = document.getElementById('modal');
   var back = el('div', 'modal');
@@ -2575,7 +2544,10 @@ function openPanel(c) {
     return n + d.requirements.length;
   }, 0);
 
-  var tabs = [{ id: 'overview', label: 'Overview' }];
+  var tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'review', label: 'Review' },
+  ];
   if (c.tasks && c.tasks.total > 0) {
     tabs.push({ id: 'tasks', label: 'Tasks', count: c.tasks.completed + '/' + c.tasks.total });
   }
@@ -2625,6 +2597,11 @@ function openPanel(c) {
 
   var body = el('div', 'abody');
 
+  if (active === 'review') {
+    a.classList.add('review-panel');
+    void loadReview(body, c.name);
+  }
+
   if (active === 'overview') {
     body.appendChild(el('h3', null, 'Details'));
     if (c.metadata.created)
@@ -2640,7 +2617,7 @@ function openPanel(c) {
       );
     }
     body.appendChild(el('div', 'row', '<b>Folder</b><code>' + esc(c.dir) + '</code>'));
-    body.appendChild(initiativeRow(c));
+    if (c.metadata.initiative) body.appendChild(initiativeRow(c));
 
     body.appendChild(el('h3', null, 'Artifacts'));
     (c.artifacts || []).forEach(function (x) {
@@ -3117,10 +3094,10 @@ function renderStores(inner) {
 
   // A machine with none registered is the normal case, not a misconfiguration,
   // so nothing is said about it at all.
-  if (!roots.length && !stores.problems.length) return;
+  if (!roots.length && !(stores.worksets || []).length && !stores.problems.length) return;
 
   var head = el('div', 'top');
-  head.appendChild(el('h2', null, 'Workspaces and stores'));
+  head.appendChild(el('h2', null, 'Worksets and stores'));
   head.appendChild(el('span', 'grow'));
   head.appendChild(el('span', 'muted', 'checked ' + esc(ago(stores.checkedAt))));
   var again = el('button', 'icon', 'Recheck');
@@ -3133,6 +3110,23 @@ function renderStores(inner) {
 
   stores.problems.forEach(function (p) {
     inner.appendChild(el('div', 'flag warn', esc(p)));
+  });
+
+  (stores.worksets || []).forEach(function (workset) {
+    var group = el('details', 'review-disclosure');
+    group.appendChild(el('summary', null, esc(workset.name) + ' · workset'));
+    workset.members.forEach(function (member) {
+      var row = el('div', 'storerow');
+      row.appendChild(el('span', null, esc(member.name)));
+      row.appendChild(el('code', 'spath', esc(member.path)));
+      var open = el('button', 'icon', 'Open folder');
+      open.onclick = function () {
+        openRoot(member.path);
+      };
+      row.appendChild(open);
+      group.appendChild(row);
+    });
+    inner.appendChild(group);
   });
 
   roots.forEach(function (root) {
@@ -3575,11 +3569,11 @@ function renderProjectActions() {
 
   var upd = el('button', 'icon', 'Update instructions');
   upd.title =
-    'Runs openspec update. This also rewrites OpenSpec’s own global configuration, which it infers from this project.';
+    'Runs openspec update. This replaces built-in skills, including local customizations, and may refresh global skills and OpenSpec configuration.';
   upd.onclick = function () {
     if (
       !window.confirm(
-        'Run openspec update in this project?\n\nThis also rewrites OpenSpec’s global configuration, which it infers from the project it is pointed at.',
+        'Run openspec update in this project?\n\nThis replaces built-in skills, including local customizations, and may refresh global skills and OpenSpec configuration.',
       )
     ) {
       return;

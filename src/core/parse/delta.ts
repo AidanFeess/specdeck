@@ -4,7 +4,7 @@ import type {
   DeltaSpec,
   ParseIssue,
 } from '../model/types.js';
-import { labelledField, scanDocument, type Heading } from './markdown.js';
+import { labelledField, scanDocument, slugify, type Heading } from './markdown.js';
 import { parseRequirements } from './requirements.js';
 
 /**
@@ -58,8 +58,94 @@ export function parseDeltaSpec(capability: string, path: string, content: string
   }
 
   for (const { heading, operation } of operationHeadings) {
+    if (operation === 'renamed') {
+      const end =
+        doc.headings.find((h) => h.line > heading.line && h.level <= 2)?.line ??
+        doc.lines.length + 1;
+      let from: { name: string; line: number } | undefined;
+      for (let i = heading.line; i < end - 1; i++) {
+        if (doc.fenced[i]) continue;
+        const match = /^\s*(?:[-*+]\s*)?(?:\*\*)?(FROM|TO)(?:\*\*)?:\s*(.+)$/i.exec(
+          doc.lines[i] ?? '',
+        );
+        if (!match) continue;
+        const name = stripQuotes(match[2] ?? '')
+          .replace(/^###\s+Requirement:\s*/i, '')
+          .trim();
+        if (match[1]?.toUpperCase() === 'FROM') {
+          if (from)
+            issues.push({
+              severity: 'error',
+              message: `Rename "${from.name}" is missing TO.`,
+              path,
+              line: from.line,
+            });
+          from = { name, line: i + 1 };
+        } else if (from && name) {
+          requirements.push({
+            id: slugify(name),
+            name,
+            text: '',
+            scenarios: [],
+            line: from.line,
+            operation,
+            renamedFrom: from.name,
+            renamedTo: name,
+          });
+          from = undefined;
+        } else {
+          issues.push({
+            severity: 'error',
+            message: 'Rename TO has no preceding FROM.',
+            path,
+            line: i + 1,
+          });
+        }
+      }
+      if (from)
+        issues.push({
+          severity: 'error',
+          message: `Rename "${from.name}" is missing TO.`,
+          path,
+          line: from.line,
+        });
+      continue;
+    }
     const parsed = parseRequirements(doc, heading, path);
-    issues.push(...parsed.issues);
+    issues.push(
+      ...parsed.issues.filter(
+        (issue) => operation !== 'removed' || !issue.message.includes('has no scenarios.'),
+      ),
+    );
+    const end =
+      doc.headings.find((h) => h.line > heading.line && h.level <= 2)?.line ?? doc.lines.length + 1;
+    if (operation === 'removed') {
+      for (let i = heading.line; i < end - 1; i++) {
+        if (doc.fenced[i]) continue;
+        const match = /^\s*[-*+]\s*`?###\s*Requirement:\s*(.+?)`?\s*$/.exec(doc.lines[i] ?? '');
+        if (match?.[1]) {
+          const name = stripQuotes(match[1]);
+          parsed.requirements.push({
+            id: slugify(name),
+            name,
+            text: '',
+            scenarios: [],
+            line: i + 1,
+          });
+        }
+      }
+    }
+    for (const h of doc.headings.filter(
+      (h) => h.line > heading.line && h.line < end && h.level === 3,
+    )) {
+      if (!/^Requirement:/i.test(h.text))
+        issues.push({
+          severity: 'error',
+          message: `Unrecognized requirement heading: ${h.text}.`,
+          path,
+          line: h.line,
+        });
+    }
 
     for (const requirement of parsed.requirements) {
       const delta: DeltaRequirement = { ...requirement, operation };
@@ -75,23 +161,6 @@ export function parseDeltaSpec(capability: string, path: string, content: string
             message:
               `Removed requirement "${requirement.name}" is missing a ` +
               `${reason === undefined ? 'Reason' : 'Migration'} field, which OpenSpec requires.`,
-            path,
-            line: requirement.line,
-          });
-        }
-      }
-
-      if (operation === 'renamed') {
-        const from = labelledField(requirement.text, 'FROM');
-        const to = labelledField(requirement.text, 'TO');
-        if (from !== undefined) delta.renamedFrom = stripQuotes(from);
-        if (to !== undefined) delta.renamedTo = stripQuotes(to);
-        if (from === undefined || to === undefined) {
-          issues.push({
-            severity: 'warning',
-            message:
-              `Renamed requirement "${requirement.name}" is missing a ` +
-              `${from === undefined ? 'FROM' : 'TO'} field.`,
             path,
             line: requirement.line,
           });

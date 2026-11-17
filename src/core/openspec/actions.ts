@@ -76,7 +76,7 @@ export async function updateInstructions(projectRoot: string): Promise<ActionOut
 }
 
 /** Links a change to an initiative through OpenSpec's own metadata command. */
-export async function linkInitiative(
+export function linkInitiative(
   projectRoot: string,
   changeName: string,
   initiative: string,
@@ -87,9 +87,18 @@ export async function linkInitiative(
   args.push('--json');
 
   if (!isSafeName(changeName) || !isSafeName(initiative)) {
-    return refuse(openspecCommand(args), 'That change or initiative name is not one specdeck will pass to OpenSpec.');
+    return Promise.resolve(
+      refuse(
+        openspecCommand(args),
+        'That change or initiative name is not one specdeck will pass to OpenSpec.',
+      ),
+    );
   }
 
-  const result = await runOpenspec(projectRoot, args);
-  return report(result, `Linked ${changeName} to ${initiative}.`, 'The link was not made.');
+  return Promise.resolve(
+    refuse(
+      openspecCommand(args),
+      'Initiative linking was removed in OpenSpec 2. Existing initiative metadata remains readable.',
+    ),
+  );
 }

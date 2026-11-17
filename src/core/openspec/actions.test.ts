@@ -76,7 +76,7 @@ describe('linking an initiative', () => {
     expect(outcome.output).toBe('');
   });
 
-  it('reports the command and output when OpenSpec rejects the link', async () => {
+  it('explains the retired initiative command without attempting it', async () => {
     const dir = buildProject();
     await createChange(dir, 'add-widget');
 
@@ -86,7 +86,8 @@ describe('linking an initiative', () => {
 
     expect(outcome.ok).toBe(false);
     expect(outcome.command).toContain('openspec set change add-widget --initiative');
-    expect(outcome.output).not.toBe('');
+    expect(outcome.output).toBe('');
+    expect(outcome.message).toContain('removed in OpenSpec 2');
   });
 });
 

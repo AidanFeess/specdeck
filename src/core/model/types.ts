@@ -196,7 +196,7 @@ export interface TaskList {
  * `done` means only that the file exists. OpenSpec has no notion of an artifact
  * being written badly, and specdeck does not invent one.
  */
-export type ArtifactStatus = 'done' | 'ready' | 'blocked';
+export type ArtifactStatus = 'done' | 'skipped' | 'ready' | 'blocked';
 
 /**
  * One artifact of a change, as declared by the change's workflow schema.
@@ -225,6 +225,7 @@ export type ChangeLocation = 'active' | 'archived';
 /** Contents of a change's `.openspec.yaml`. */
 export interface ChangeMetadata {
   schema: string;
+  skipSpecs?: boolean;
   /** Date only, as OpenSpec writes it. Not a timestamp. */
   created?: string;
   goal?: string;
