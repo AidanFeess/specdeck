@@ -13,9 +13,10 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
 
-import { KNOWN_TOOLS } from '../dist/core/openspec/harness.js';
+import { KNOWN_TOOLS, detectHarnesses, buildHandoff } from '../dist/core/openspec/harness.js';
+import { localFileSource } from '../dist/core/fs/node-source.js';
 import { findBundledOpenSpecRoot } from '../dist/core/openspec/installed.js';
 
 const packageRoot = findBundledOpenSpecRoot();
@@ -50,11 +51,27 @@ const notes = [];
 for (const tool of KNOWN_TOOLS) {
   const dir = mkdtempSync(join(tmpdir(), `drift-${tool.id}-`));
   try {
-    execFileSync(process.execPath, [openspecBin, 'init', '.', '--tools', tool.id], {
-      cwd: dir,
-      stdio: 'pipe',
-      env: { ...process.env, NO_COLOR: '1' },
-    });
+    execFileSync(
+      process.execPath,
+      [openspecBin, 'init', '.', '--scope', 'project', '--tools', tool.id],
+      {
+        cwd: dir,
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          NO_COLOR: '1',
+          OPENSPEC_TELEMETRY: '0',
+          OPENSPEC_NO_UPDATE_CHECK: '1',
+          HOME: dir,
+          USERPROFILE: dir,
+          XDG_CONFIG_HOME: join(dir, '.config'),
+          XDG_DATA_HOME: join(dir, '.data'),
+          APPDATA: join(dir, '.appdata'),
+          CODEX_HOME: join(dir, '.codex-home'),
+        },
+        timeout: 60_000,
+      },
+    );
 
     const files = listTree(dir).filter((f) => !f.startsWith('openspec/'));
 
@@ -64,31 +81,23 @@ for (const tool of KNOWN_TOOLS) {
       continue;
     }
 
-    if (tool.skillsDir !== undefined) {
-      const hasSkills = files.some(
-        (f) => f.startsWith(`${tool.skillsDir}/`) && /openspec-[a-z-]+\/SKILL\.md$/.test(f),
+    const detected = await detectHarnesses(localFileSource, dir);
+    const payload = buildHandoff('example-change', 'apply', detected);
+    if (!payload.command?.includes('openspec-apply-change')) {
+      failures.push(
+        `${tool.id}: generated skills did not produce an apply handoff: ${files.slice(0, 5).join(', ')}`,
       );
-      const hasAnythingThere = files.some((f) => f.startsWith(`${tool.skillsDir}/`));
-      if (!hasSkills && !hasAnythingThere) {
-        failures.push(
-          `${tool.id}: expected files under "${tool.skillsDir}", got: ${files.slice(0, 5).join(', ')}`,
-        );
-      }
     }
-
-    if (tool.commandsDir !== undefined) {
-      const hasCommands = files.some((f) => f.startsWith(`${tool.commandsDir}/`));
-      if (!hasCommands) {
-        const dirs = [...new Set(files.map((f) => f.split('/').slice(0, -1).join('/')))];
-        failures.push(
-          `${tool.id}: expected commands under "${tool.commandsDir}", found directories: ${dirs.join(', ')}`,
-        );
-      }
+    if (!files.some((f) => f === '.agents/skills/openspec-apply-change/SKILL.md')) {
+      failures.push(`${tool.id}: missing shared project apply skill`);
     }
   } catch (error) {
     failures.push(`${tool.id}: init failed: ${error instanceof Error ? error.message : error}`);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    const rel = relative(resolve(tmpdir()), resolve(dir));
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel))
+      rmSync(dir, { recursive: true, force: true });
+    else failures.push('Unsafe fixture cleanup path; fixture left in place.');
   }
 }
 

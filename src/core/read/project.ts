@@ -20,7 +20,6 @@ import {
   openspecDir,
   parseArchivedDirName,
   schemaSearchPaths,
-  SPEC_FILE,
   workspaceMarkerDir,
 } from '../openspec/paths.js';
 import { conventionalPlanningHome, resolvePlanningHome } from '../openspec/planning-home.js';
@@ -155,7 +154,14 @@ async function readChange(
   }
 
   const artifacts =
-    schema === undefined ? [] : deriveArtifacts({ schema, presentPaths, changeRoot });
+    schema === undefined
+      ? []
+      : deriveArtifacts({
+          schema,
+          presentPaths,
+          changeRoot,
+          ...(metadata.skipSpecs === undefined ? {} : { skipSpecs: metadata.skipSpecs }),
+        });
 
   const lane =
     schema === undefined
@@ -233,22 +239,22 @@ function brokenChange(
 }
 
 async function readCapabilities(source: FileSource, specsDir: string): Promise<Capability[]> {
-  const entries = await source.list(specsDir);
-  if (entries === undefined) return [];
-
+  const files = await walkFiles(source, specsDir, {
+    maxDepth: 8,
+    includeFile: (path) => path.endsWith('/spec.md'),
+  });
   const capabilities: Capability[] = [];
-  for (const entry of entries) {
-    if (entry.kind !== 'directory') continue;
-    const path = joinPath(specsDir, entry.name, SPEC_FILE);
+  for (const file of files) {
+    const id = file.relativePath.slice(0, -'/spec.md'.length);
+    const path = file.path;
     try {
       const content = await source.readText(path);
-      if (content === undefined) continue;
-      capabilities.push(parseCapability(entry.name, path, content));
+      if (content !== undefined) capabilities.push(parseCapability(id, path, content));
     } catch (error) {
       capabilities.push({
-        id: entry.name,
+        id,
         path,
-        title: entry.name,
+        title: id,
         requirements: [],
         issues: [
           {

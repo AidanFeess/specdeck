@@ -17,7 +17,7 @@
  * verified against. Raise it deliberately, after checking the parsers, rather
  * than as a side effect of a dependency bump.
  */
-export const MAX_VERIFIED_OPENSPEC = { major: 1, minor: 4 } as const;
+export const MAX_VERIFIED_OPENSPEC = { major: 2, minor: 1 } as const;
 
 /**
  * The lowest OpenSpec version that produces the layout specdeck expects.
@@ -31,10 +31,7 @@ export interface SemanticVersion {
 }
 
 export type CompatibilityStatus =
-  | 'supported'
-  | 'newer-than-verified'
-  | 'older-than-supported'
-  | 'unreadable';
+  'supported' | 'newer-than-verified' | 'older-than-supported' | 'unreadable';
 
 export interface CompatibilityResult {
   status: CompatibilityStatus;
@@ -69,7 +66,11 @@ export function parseVersion(raw: string): SemanticVersion | undefined {
   const major = Number(majorText);
   const minor = Number(minorText);
   const patch = Number(patchText);
-  if (!Number.isSafeInteger(major) || !Number.isSafeInteger(minor) || !Number.isSafeInteger(patch)) {
+  if (
+    !Number.isSafeInteger(major) ||
+    !Number.isSafeInteger(minor) ||
+    !Number.isSafeInteger(patch)
+  ) {
     return undefined;
   }
 

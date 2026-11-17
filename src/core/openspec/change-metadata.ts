@@ -112,6 +112,10 @@ export function parseChangeMetadata(
   }
 
   const metadata: ChangeMetadata = { schema: schema ?? defaultSchema };
+  if (typeof root.skip_specs === 'boolean') metadata.skipSpecs = root.skip_specs;
+  else if (root.skip_specs !== undefined) {
+    issues.push({ severity: 'error', message: 'skip_specs must be a boolean.', path });
+  }
 
   const created = normalizeCreated(root.created);
   if (created !== undefined) metadata.created = created;

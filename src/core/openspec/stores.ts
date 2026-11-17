@@ -66,6 +66,7 @@ export interface Initiative {
 
 export interface StoreSnapshot {
   workspaces: Workspace[];
+  worksets: Array<{ name: string; members: Array<{ name: string; path: string }> }>;
   contextStores: ContextStore[];
   initiatives: Initiative[];
   /** Why a section is empty, when it is empty because something failed. */
@@ -133,159 +134,65 @@ async function readJson<T>(
   return { value };
 }
 
-interface RawWorkspaceList {
-  workspaces?: unknown;
-}
-
-interface RawStoreList {
-  context_stores?: unknown;
-}
-
-interface RawInitiativeList {
-  context_stores?: unknown;
-}
-
-function readWorkspace(raw: unknown): Workspace | undefined {
-  const entry = asRecord(raw);
-  const name = asString(entry?.name);
-  if (entry === undefined || name === undefined) return undefined;
-
-  const links: WorkspaceLink[] = [];
-  if (Array.isArray(entry.links)) {
-    for (const rawLink of entry.links) {
-      const link = asRecord(rawLink);
-      const linkName = asString(link?.name);
-      const linkPath = asString(link?.path);
-      if (link === undefined || linkName === undefined || linkPath === undefined) continue;
-      links.push({ name: linkName, path: linkPath, status: readDiagnostics(link.status) });
-    }
-  }
-
-  // A workspace whose own status is clean but whose links are broken is not
-  // healthy: the links are the entire point of a workspace.
-  const status = [...readDiagnostics(entry.status), ...links.flatMap((link) => link.status)];
-
-  return {
-    name,
-    root: asString(entry.root) ?? '',
-    links,
-    status,
-    health: healthOf(status),
-  };
-}
-
-function readStore(raw: unknown): ContextStore | undefined {
-  const entry = asRecord(raw);
-  const id = asString(entry?.id);
-  if (entry === undefined || id === undefined) return undefined;
-
-  const status = readDiagnostics(entry.status);
-  return { id, root: asString(entry.root) ?? '', status, health: healthOf(status) };
-}
-
-/**
- * Reads every root OpenSpec knows about, with health.
- *
- * Listing and diagnosing are separate commands, so both run and are merged:
- * `list` says what exists, `doctor` says whether it works. A root that lists but
- * whose diagnostic could not run keeps `unknown` health rather than inheriting
- * a clean bill from the listing.
- */
+/** Read-only adapters for OpenSpec 2 stores and personal worksets. */
 export async function readStores(
   projectRoot: string,
   now: () => Date = () => new Date(),
 ): Promise<StoreSnapshot> {
-  const [workspaceList, storeList, storeDoctor, initiativeList] = await Promise.all([
-    readJson<RawWorkspaceList>(projectRoot, ['workspace', 'list', '--json']),
-    readJson<RawStoreList>(projectRoot, ['context-store', 'list', '--json']),
-    readJson<RawStoreList>(projectRoot, ['context-store', 'doctor', '--json']),
-    readJson<RawInitiativeList>(projectRoot, ['initiative', 'list', '--json']),
+  const [listed, diagnosed, views] = await Promise.all([
+    readJson<{ stores?: unknown; status?: unknown }>(projectRoot, ['store', 'list', '--json']),
+    readJson<{ stores?: unknown; status?: unknown }>(projectRoot, ['store', 'doctor', '--json']),
+    readJson<{ worksets?: unknown; status?: unknown }>(projectRoot, ['workset', 'list', '--json']),
   ]);
-
   const problems: string[] = [];
-  for (const outcome of [workspaceList, storeList, initiativeList]) {
-    if (outcome.problem !== undefined) problems.push(outcome.problem);
+  for (const outcome of [listed, diagnosed, views]) {
+    if (outcome.problem) problems.push(outcome.problem);
+    for (const diagnostic of readDiagnostics(outcome.value?.status))
+      problems.push(diagnostic.message);
   }
-
-  const workspaces: Workspace[] = [];
-  if (Array.isArray(workspaceList.value?.workspaces)) {
-    for (const raw of workspaceList.value.workspaces) {
-      const workspace = readWorkspace(raw);
-      if (workspace !== undefined) workspaces.push(workspace);
+  const contextStores: ContextStore[] = [];
+  const checks = Array.isArray(diagnosed.value?.stores) ? diagnosed.value.stores : [];
+  if (Array.isArray(listed.value?.stores)) {
+    for (const raw of listed.value.stores) {
+      const entry = asRecord(raw);
+      const id = asString(entry?.id);
+      const root = asString(entry?.root);
+      if (!id || !root) continue;
+      const check = asRecord(checks.find((c) => asRecord(c)?.id === id));
+      const status = [
+        ...readDiagnostics(check?.status),
+        ...readDiagnostics(asRecord(check?.openspec_root)?.status),
+      ];
+      contextStores.push({
+        id,
+        root,
+        status,
+        health: check && Array.isArray(check.status) ? healthOf(status) : 'unknown',
+      });
     }
   }
-
-  // Workspace health needs a per-workspace diagnostic, so it is fetched only
-  // for the workspaces that actually exist.
-  await Promise.all(
-    workspaces.map(async (workspace) => {
-      const doctor = await readJson<{ workspace?: unknown }>(projectRoot, [
-        'workspace',
-        'doctor',
-        '--workspace',
-        workspace.name,
-        '--json',
-        '--no-interactive',
-      ]);
-      if (doctor.value === undefined) {
-        workspace.health = 'unknown';
-        return;
+  const worksets: Array<{ name: string; members: Array<{ name: string; path: string }> }> = [];
+  if (Array.isArray(views.value?.worksets)) {
+    for (const raw of views.value.worksets) {
+      const view = asRecord(raw);
+      const name = asString(view?.name);
+      if (!name || !Array.isArray(view?.members)) continue;
+      const members: Array<{ name: string; path: string }> = [];
+      for (const rawMember of view.members) {
+        const member = asRecord(rawMember);
+        const memberName = asString(member?.name);
+        const path = asString(member?.path);
+        if (memberName && path) members.push({ name: memberName, path });
       }
-      const diagnosed = readWorkspace(doctor.value.workspace);
-      if (diagnosed === undefined) {
-        workspace.health = 'unknown';
-        return;
-      }
-      workspace.status = diagnosed.status;
-      workspace.health = diagnosed.health;
-    }),
-  );
-
-  const stores: ContextStore[] = [];
-  if (Array.isArray(storeList.value?.context_stores)) {
-    for (const raw of storeList.value.context_stores) {
-      const store = readStore(raw);
-      if (store !== undefined) stores.push(store);
+      worksets.push({ name, members });
     }
   }
-
-  if (storeDoctor.value === undefined) {
-    // The listing said these exist; nothing said they are well.
-    for (const store of stores) store.health = 'unknown';
-  } else if (Array.isArray(storeDoctor.value.context_stores)) {
-    const diagnosed = new Map<string, ContextStore>();
-    for (const raw of storeDoctor.value.context_stores) {
-      const store = readStore(raw);
-      if (store !== undefined) diagnosed.set(store.id, store);
-    }
-    for (const store of stores) {
-      const match = diagnosed.get(store.id);
-      if (match === undefined) {
-        store.health = 'unknown';
-        continue;
-      }
-      store.status = match.status;
-      store.health = match.health;
-    }
-  }
-
-  const initiatives: Initiative[] = [];
-  if (Array.isArray(initiativeList.value?.context_stores)) {
-    for (const rawGroup of initiativeList.value.context_stores) {
-      const group = asRecord(rawGroup);
-      const store = asString(asRecord(group?.context_store)?.id) ?? '';
-      if (!Array.isArray(group?.initiatives)) continue;
-      for (const rawInitiative of group.initiatives) {
-        const entry = asRecord(rawInitiative);
-        const id = asString(entry?.id);
-        if (id === undefined) continue;
-        const initiative: Initiative = { id, store };
-        const title = asString(entry?.title);
-        if (title !== undefined) initiative.title = title;
-        initiatives.push(initiative);
-      }
-    }
-  }
-
-  return { workspaces, contextStores: stores, initiatives, problems, checkedAt: now().toISOString() };
+  return {
+    workspaces: [],
+    contextStores,
+    worksets,
+    initiatives: [],
+    problems,
+    checkedAt: now().toISOString(),
+  };
 }

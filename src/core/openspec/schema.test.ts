@@ -190,12 +190,13 @@ describe('against the real bundled OpenSpec package', () => {
     expect(trackedArtifact(result.schema)?.generates).toBe('tasks.md');
   });
 
-  it('resolves the built-in workspace-planning schema from disk', async () => {
+  it('reports the retired workspace-planning schema as unavailable', async () => {
     const result = await loadSchema(
       new NodeFileSource(),
       'workspace-planning',
       schemaSearchPaths(undefined),
     );
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.reason).toBe('not-found');
   });
 });

@@ -12,6 +12,16 @@ import { readProject } from './project.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
+it('reads namespaced capability paths used by modern OpenSpec', async () => {
+  const source = new MemoryFileSource({
+    '/p/openspec/specs/identity/auth/spec.md':
+      '# Auth\n## Requirements\n### Requirement: Login\nThe system SHALL log in.\n#### Scenario: Valid\n- **WHEN** valid\n- **THEN** logged in',
+  });
+  const result = await readProject(source, '/p');
+  expect(result.ok).toBe(true);
+  if (result.ok) expect(result.snapshot.capabilities[0]?.id).toBe('identity/auth');
+});
+
 describe('matchesGlob', () => {
   it('matches the patterns OpenSpec schemas use', () => {
     expect(matchesGlob('proposal.md', 'proposal.md')).toBe(true);
